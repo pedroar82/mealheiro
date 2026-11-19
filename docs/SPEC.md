@@ -380,3 +380,7 @@ note when the period includes history without product detail.
   (Claude via Anthropic SDK, structured JSON output, server-side refusal fallback); model set by secret `RECEIPT_MODEL`
   (default `claude-opus-5-5`). Line-item categories: user rule (exact printed text) > model guess with confidence ≥ 0.6
   (flagged as suggestion) > Por categorizar. Discount lines follow the receipt's main category.
+- 20/11/2026 — Receipts are matched to existing movements (same amount, ±3 days, no document yet — Excel history, manual,
+  bank line) and by default **attached** to them instead of creating a new one; the existing date/amount/account stay.
+  Already-saved receipt movements can be merged from the detail screen. Stores get `locality` (from the receipt, or the
+  postal-code line of the address).

@@ -33,7 +33,8 @@ Last updated: 19/11/2026. Read with `docs/SPEC.md` (requirements, data model, de
    Redeploy after editing the function: `npx supabase functions deploy extract-receipt --project-ref <project-ref> --use-api`.
    iPhone camera scanning **done, tested in Expo Go 19/11/2026** (`src/app/digitalizar.tsx`: expo-camera QR + photo → same pipeline;
    AT QR parsed by `parseAtQr`, QR values win over the model). Run with `npx expo start --go`. User chose Expo Go over a paid
-   Apple Developer account for now (19/11/2026). Then phase 3 rest (scan: QR + Claude Edge Function; image deleted after save; store kept), 4 (PDF share sheet), 5 (Explorar/Análise).
+   Apple Developer account for now (19/11/2026).
+   Receipt ↔ existing movement merge + store locality done 20/11/2026 (migration `20261120000000_store_locality.sql` applied). Then phase 3 rest (scan: QR + Claude Edge Function; image deleted after save; store kept), 4 (PDF share sheet), 5 (Explorar/Análise).
 
 ## Open questions (SPEC §10)
 1. Excel non-`Banco` accounts → Carteira? 2. Ask card/cash when saving a receipt? 3. Other banks/cards?

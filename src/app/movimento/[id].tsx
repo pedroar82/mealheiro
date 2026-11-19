@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -6,7 +7,10 @@ import { TransactionForm } from '@/components/transaction-form';
 import { Button, Card, Muted } from '@/components/ui';
 import { colors, maxContentWidth, space } from '@/constants/theme';
 import { categoryPath } from '@/lib/categories';
-import { formatEUR } from '@/lib/format';
+import { formatDate, formatEUR } from '@/lib/format';
+import { errorText } from '@/lib/import-io';
+import { findMatches, mergeReceiptInto } from '@/lib/receipt';
+import { supabase } from '@/lib/supabase';
 import { useCategories, useDeleteTransaction, useLineItems, useSaveTransaction, useTransaction } from '@/lib/queries';
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -25,6 +29,35 @@ export default function EditMovimento() {
   const [confirm, setConfirm] = useState(false);
   const lines = useLineItems(id);
   const { index } = useCategories();
+  const qc = useQueryClient();
+  const [merging, setMerging] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+
+  const t = tx.data;
+  const fromReceipt = t?.source === 'receipt' || t?.source === 'pdf';
+  const matches = useQuery({
+    queryKey: ['matches', id, t?.date, t?.amount_cents],
+    enabled: !!t && fromReceipt,
+    queryFn: () => findMatches(t!.date, t!.amount_cents, id),
+  });
+  const store = useQuery({
+    queryKey: ['store', t?.store_id],
+    enabled: !!t?.store_id,
+    queryFn: async () => (await supabase.from('stores').select('name, locality').eq('id', t!.store_id!).single()).data as { name: string; locality: string | null } | null,
+  });
+
+  const merge = async (targetId: string) => {
+    setMerging(true);
+    setMergeError(null);
+    try {
+      await mergeReceiptInto(id, targetId);
+      ['transactions', 'transaction', 'spend', 'line_items', 'matches'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      router.replace({ pathname: '/movimento/[id]', params: { id: targetId } });
+    } catch (e) {
+      setMergeError(errorText(e));
+      setMerging(false);
+    }
+  };
 
   if (tx.isLoading) return <ActivityIndicator style={{ marginTop: space.xl }} />;
   if (!tx.data) return <Text style={styles.error}>Movimento não encontrado.</Text>;
@@ -34,7 +67,20 @@ export default function EditMovimento() {
   return (
     <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll}>
       <View style={styles.inner}>
-        <Muted>{SOURCE_LABEL[tx.data.source] ?? tx.data.source}</Muted>
+        <Muted>
+          {[SOURCE_LABEL[tx.data.source] ?? tx.data.source, store.data?.name, store.data?.locality].filter(Boolean).join(' · ')}
+        </Muted>
+
+        {(matches.data?.length ?? 0) > 0 && (
+          <Card style={styles.matchCard}>
+            <Text style={styles.h3}>Possível duplicado</Text>
+            <Muted>Há outro movimento com o mesmo valor em datas próximas, sem talão. Se for a mesma compra, junte-os: os produtos passam para esse movimento e este é apagado.</Muted>
+            {matches.data!.map((m) => (
+              <Button key={m.id} variant="secondary" busy={merging} label={`Juntar a: ${m.description ?? 'Despesa'} · ${formatDate(m.date)}`} onPress={() => merge(m.id)} />
+            ))}
+            {mergeError && <Text style={styles.error}>{mergeError}</Text>}
+          </Card>
+        )}
         {(save.error || del.error) && <Text style={styles.error}>{(save.error ?? del.error)!.message}</Text>}
 
         {editable ? (
@@ -87,6 +133,7 @@ const styles = StyleSheet.create({
   error: { color: colors.danger, fontSize: 14, padding: space.md },
   confirmText: { fontSize: 15, color: colors.ink },
   h3: { fontSize: 15, fontWeight: '700', color: colors.ink },
+  matchCard: { borderWidth: 1, borderColor: colors.accent },
   line: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: 6 },
   lineMain: { flex: 1 },
   lineName: { fontSize: 14, color: colors.ink },

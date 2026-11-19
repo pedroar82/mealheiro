@@ -20,13 +20,14 @@ const SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: [
-    'merchant_name', 'store_name', 'store_address', 'seller_nif', 'doc_type', 'doc_number', 'atcud',
+    'merchant_name', 'store_name', 'store_address', 'store_locality', 'seller_nif', 'doc_type', 'doc_number', 'atcud',
     'date', 'total', 'vat_total', 'billing_start', 'billing_end', 'lines', 'warnings',
   ],
   properties: {
     merchant_name: nullable('string'),
     store_name: nullable('string'),
     store_address: nullable('string'),
+    store_locality: nullable('string'),
     seller_nif: nullable('string'),
     doc_type: nullable('string'),
     doc_number: nullable('string'),
@@ -62,6 +63,7 @@ const SYSTEM = `You extract data from Portuguese receipts and invoices (talões,
 
 Output fields:
 - merchant_name: the company/brand (e.g. "Continente", "Farmácia Correia"). store_name: the specific shop/branch as printed at the top, store_address: its address as printed.
+- store_locality: the town/city where that shop is (e.g. "Lisboa", "Porto"), usually after the postal code (1000-001 Lisboa). For online shops or utility bills without a shop, null.
 - seller_nif: the seller's NIF (9 digits, often "NIF", "Contribuinte" or "NIPC"). Never the customer's NIF.
 - doc_type: the AT document type code if identifiable (FT, FS, FR, NC, ND, VD…). doc_number: the document number as printed (e.g. "FS 0123/45678"). atcud: the ATCUD code if printed.
 - date: the document/purchase date as YYYY-MM-DD. Portuguese dates are DD/MM/YYYY or DD-MM-YYYY — never read them as MM/DD.

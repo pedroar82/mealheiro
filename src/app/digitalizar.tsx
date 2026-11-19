@@ -78,11 +78,11 @@ export default function Digitalizar() {
     }
   };
 
-  const save = async (d: Draft) => {
+  const save = async (d: Draft, mergeInto: string | null) => {
     setError(null);
     setStage('saving');
     try {
-      const id = await saveDraft(d, storagePath);
+      const id = await saveDraft(d, storagePath, mergeInto);
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['spend'] });
       router.replace({ pathname: '/movimento/[id]', params: { id } });

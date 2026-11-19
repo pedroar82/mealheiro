@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { CategoryPicker } from '@/components/category-picker';
-import { Button, Card, FieldLabel, Muted } from '@/components/ui';
+import { Button, Card, Chip, FieldLabel, Muted } from '@/components/ui';
 import { colors, radius, space } from '@/constants/theme';
 import type { CategoryIndex } from '@/lib/categories';
 import { centsToInput, formatDate, formatEUR, parseAmount, parseDate } from '@/lib/format';
-import { findDuplicate, type Draft, type DraftLine } from '@/lib/receipt';
+import { findDuplicate, findMatches, type Draft, type DraftLine, type Match } from '@/lib/receipt';
 
 /** Review an extracted receipt/invoice before saving. Shared by the web upload and the iPhone scanner. */
 export function ReceiptReview({
@@ -21,13 +21,15 @@ export function ReceiptReview({
   index: CategoryIndex;
   busy: boolean;
   error: string | null;
-  onSave: (d: Draft) => void;
+  onSave: (d: Draft, mergeInto: string | null) => void;
   onDiscard: () => void;
 }) {
   const [d, setD] = useState(initial);
   const [dateText, setDateText] = useState(formatDate(initial.date));
   const [totalText, setTotalText] = useState(centsToInput(initial.totalCents));
   const [duplicate, setDuplicate] = useState<{ issue_date: string | null } | null>(null);
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [mergeInto, setMergeInto] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -39,6 +41,20 @@ export function ReceiptReview({
 
   const date = parseDate(dateText);
   const total = parseAmount(totalText);
+
+  // same purchase already recorded (Excel history, manual entry, bank line)? Offer to attach the receipt to it.
+  useEffect(() => {
+    if (!date || total == null) return;
+    let alive = true;
+    findMatches(date, total).then((m) => {
+      if (!alive) return;
+      setMatches(m);
+      setMergeInto(m[0]?.id ?? null); // default: the closest one
+    });
+    return () => {
+      alive = false;
+    };
+  }, [date, total]);
   const sum = d.lines.reduce((s, l) => s + l.total_cents, 0);
   const mismatch = total != null && d.lines.length > 0 && sum !== total;
   const uncategorised = d.lines.filter((l) => !l.category_id && l.total_cents > 0).length; // discounts follow the main category
@@ -50,7 +66,7 @@ export function ReceiptReview({
 
   const save = () => {
     if (!date || total == null) return;
-    onSave({ ...d, date, totalCents: total });
+    onSave({ ...d, date, totalCents: total }, matches.some((m) => m.id === mergeInto) ? mergeInto : null);
   };
 
   return (
@@ -69,7 +85,17 @@ export function ReceiptReview({
       <Card>
         <FieldLabel>Comerciante</FieldLabel>
         <TextInput style={styles.input} value={d.merchantName} onChangeText={(merchantName) => setD((s) => ({ ...s, merchantName }))} placeholder="ex.: Continente" />
-        {(d.storeName || d.storeAddress) && <Muted>{[d.storeName, d.storeAddress].filter(Boolean).join(' · ')}</Muted>}
+        <View style={styles.row2}>
+          <View style={[styles.col, { flex: 2 }]}>
+            <FieldLabel>Loja</FieldLabel>
+            <TextInput style={styles.input} value={d.storeName ?? ''} onChangeText={(t) => setD((s) => ({ ...s, storeName: t || null }))} placeholder="ex.: Continente Lisboa" />
+          </View>
+          <View style={styles.col}>
+            <FieldLabel>Localidade</FieldLabel>
+            <TextInput style={styles.input} value={d.storeLocality ?? ''} onChangeText={(t) => setD((s) => ({ ...s, storeLocality: t || null }))} placeholder="ex.: Lisboa" />
+          </View>
+        </View>
+        {d.storeAddress && <Muted>{d.storeAddress}</Muted>}
         <View style={styles.row2}>
           <View style={styles.col}>
             <FieldLabel>Data</FieldLabel>
@@ -93,6 +119,27 @@ export function ReceiptReview({
           </Text>
         )}
       </Card>
+
+      {date && total != null && matches.length > 0 && (
+        <Card style={styles.matchCard}>
+          <Text style={styles.warnTitle}>Já existe um movimento com este valor</Text>
+          <Muted>
+            Provavelmente é a mesma compra (do Excel, introduzida à mão ou do banco). Juntar o talão a esse movimento evita
+            contá-la duas vezes; a data, o valor e a conta dele mantêm-se.
+          </Muted>
+          <View style={styles.chips}>
+            {matches.map((m) => (
+              <Chip
+                key={m.id}
+                label={`Juntar a: ${m.description ?? 'Despesa'} · ${formatDate(m.date)} · ${SOURCE[m.source] ?? m.source}`}
+                selected={mergeInto === m.id}
+                onPress={() => setMergeInto(m.id)}
+              />
+            ))}
+            <Chip label="Não, é outra compra" selected={mergeInto === null} onPress={() => setMergeInto(null)} />
+          </View>
+        </Card>
+      )}
 
       <Card>
         <View style={styles.linesHead}>
@@ -124,11 +171,13 @@ export function ReceiptReview({
       </Card>
 
       {error && <Text style={styles.error}>{error}</Text>}
-      <Button label="Guardar" onPress={save} busy={busy} disabled={!!duplicate || !date || total == null || busy} />
+      <Button label={mergeInto ? 'Guardar e juntar' : 'Guardar'} onPress={save} busy={busy} disabled={!!duplicate || !date || total == null || busy} />
       <Button label="Descartar" variant="secondary" onPress={onDiscard} disabled={busy} />
     </View>
   );
 }
+
+const SOURCE: Record<string, string> = { manual: 'manual', excel: 'Excel', bank_csv: 'banco', receipt: 'talão', pdf: 'PDF' };
 
 function LineAmount({ line, onChange }: { line: DraftLine; onChange: (cents: number) => void }) {
   const [text, setText] = useState(centsToInput(Math.abs(line.total_cents)));
@@ -165,6 +214,8 @@ const styles = StyleSheet.create({
   warning: { fontSize: 13, color: colors.warning },
   warningSmall: { fontSize: 12, color: colors.warning, fontWeight: '600' },
   warnCard: { borderWidth: 1, borderColor: colors.warning },
+  matchCard: { borderWidth: 1, borderColor: colors.accent },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   warnTitle: { fontSize: 15, fontWeight: '700', color: colors.ink },
   error: { color: colors.danger, fontSize: 14 },
 });

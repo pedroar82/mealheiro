@@ -3,7 +3,7 @@
 
 import { categoryPath, type CategoryIndex } from '@/lib/categories';
 import { normDesc } from '@/lib/cgd-import';
-import { todayISO } from '@/lib/format';
+import { addDays, todayISO } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
 
 /** What the Edge Function returns (schema in supabase/functions/extract-receipt). Amounts in euros. */
@@ -11,6 +11,7 @@ export type Extraction = {
   merchant_name: string | null;
   store_name: string | null;
   store_address: string | null;
+  store_locality?: string | null; // older function versions don't send it
   seller_nif: string | null;
   doc_type: string | null;
   doc_number: string | null;
@@ -52,6 +53,7 @@ export type Draft = {
   merchantName: string;
   storeName: string | null;
   storeAddress: string | null;
+  storeLocality: string | null;
   sellerNif: string | null;
   docType: string | null;
   docNumber: string | null;
@@ -74,6 +76,12 @@ const validDate = (s: string | null) => (s && ISO.test(s) && !isNaN(Date.parse(s
 
 /** Line rules are keyed by the normalised printed text ('LEITE MIMOSA M/G 1L'). */
 export const linePattern = (raw: string) => normDesc(raw);
+
+/** '…, 1000-001 Lisboa' → 'Lisboa' (Portuguese postal code line). */
+export function localityFromAddress(address: string | null): string | null {
+  const m = address?.match(/\d{4}-\d{3}\s+([^,\n]+)/);
+  return m ? m[1].trim() : null;
+}
 
 /** Fields of the Portuguese invoice QR (Portaria 195/2020): 'A:123456789*B:999999990*…*O:6.89'. */
 export type AtQr = {
@@ -145,6 +153,7 @@ export function buildDraft(documentId: string, kind: Draft['kind'], x: Extractio
     merchantName: x.merchant_name?.trim() || x.store_name?.trim() || '',
     storeName: x.store_name?.trim() || null,
     storeAddress: x.store_address?.trim() || null,
+    storeLocality: x.store_locality?.trim() || localityFromAddress(x.store_address),
     sellerNif: x.seller_nif?.replace(/\D/g, '') || null,
     docType: x.doc_type,
     docNumber: x.doc_number?.trim() || null,
@@ -213,7 +222,7 @@ export async function discardDocument(documentId: string, storagePath: string | 
 export const DUPLICATE = 'duplicate';
 
 /** Write transaction + line items + merchant/store, learn rules, then delete the uploaded file. */
-export async function saveDraft(d: Draft, storagePath: string | null): Promise<string> {
+export async function saveDraft(d: Draft, storagePath: string | null, mergeInto?: string | null): Promise<string> {
   // 1. claim (seller_nif, doc_number) first — the unique constraint stops a second save of the same invoice
   try {
     await must(
@@ -251,7 +260,7 @@ export async function saveDraft(d: Draft, storagePath: string | null): Promise<s
     const store = await must(
       supabase
         .from('stores')
-        .upsert({ merchant_id: merchantId, name: d.storeName, address: d.storeAddress }, { onConflict: 'merchant_id,name' })
+        .upsert({ merchant_id: merchantId, name: d.storeName, address: d.storeAddress, locality: d.storeLocality }, { onConflict: 'merchant_id,name' })
         .select('id')
         .single(),
     );
@@ -261,29 +270,40 @@ export async function saveDraft(d: Draft, storagePath: string | null): Promise<s
   // 3. transaction + lines (uncategorised discount lines follow the receipt's main category)
   const main = mainCategory(d.lines);
   const lines = d.lines.map((l) => (l.total_cents < 0 && !l.category_id ? { ...l, category_id: main } : l));
-  // a previous save of this document that failed halfway is replaced, never duplicated (line items cascade)
-  await run(supabase.from('transactions').delete().eq('document_id', d.documentId));
-  const tx = await must(
-    supabase
-      .from('transactions')
-      .insert({
-        kind: 'expense',
-        date: d.date,
-        amount_cents: d.totalCents,
-        account_id: null, // payment method isn't asked; the bank import links card payments by amount/date
-        category_id: main,
-        merchant_id: merchantId,
-        store_id: storeId,
-        description: name || null,
-        source: d.kind === 'pdf_invoice' ? 'pdf' : 'receipt',
-        document_id: d.documentId,
-        billing_start: d.billingStart,
-        billing_end: d.billingEnd,
-        needs_review: lines.some((l) => !l.category_id),
-      })
-      .select('id')
-      .single(),
-  );
+  // a previous save of this document that failed halfway is replaced, never duplicated (line items cascade).
+  // Only rows the receipt itself created (source receipt/pdf) are removed — never a movement it was merged into.
+  await run(supabase.from('transactions').delete().eq('document_id', d.documentId).in('source', ['receipt', 'pdf']));
+  const details = {
+    category_id: main,
+    merchant_id: merchantId,
+    store_id: storeId,
+    document_id: d.documentId,
+    billing_start: d.billingStart,
+    billing_end: d.billingEnd,
+    needs_review: lines.some((l) => !l.category_id),
+  };
+  let tx: Row;
+  if (mergeInto) {
+    // same real purchase already recorded (Excel, manual, bank): attach the receipt to it, keep its date/amount/account
+    tx = await must(supabase.from('transactions').update(details).eq('id', mergeInto).select('id').single());
+    await run(supabase.from('line_items').delete().eq('transaction_id', mergeInto));
+  } else {
+    tx = await must(
+      supabase
+        .from('transactions')
+        .insert({
+          ...details,
+          kind: 'expense',
+          date: d.date,
+          amount_cents: d.totalCents,
+          account_id: null, // payment method isn't asked; the bank import links card payments by amount/date
+          description: name || null,
+          source: d.kind === 'pdf_invoice' ? 'pdf' : 'receipt',
+        })
+        .select('id')
+        .single(),
+    );
+  }
   if (lines.length) {
     await run(
       supabase.from('line_items').insert(
@@ -382,4 +402,40 @@ export async function uploadAndExtract(opts: {
 export async function loadLineRules(): Promise<LineRule[]> {
   const { data } = await supabase.from('rules').select('pattern, category_id').eq('scope', 'line_item');
   return (data ?? []) as LineRule[];
+}
+
+export type Match = { id: string; date: string; description: string | null; source: string; days: number };
+
+/** Existing expenses that may be this same purchase: same amount, ±3 days, no receipt attached yet. */
+export async function findMatches(date: string, totalCents: number, excludeId?: string): Promise<Match[]> {
+  const from = addDays(date, -3);
+  const to = addDays(date, 3);
+  let q = supabase
+    .from('transactions')
+    .select('id, date, description, source')
+    .eq('kind', 'expense')
+    .eq('amount_cents', totalCents)
+    .gte('date', from)
+    .lte('date', to)
+    .is('document_id', null);
+  if (excludeId) q = q.neq('id', excludeId);
+  const { data } = await q.limit(5);
+  const day = (iso: string) => Date.parse(iso) / 86_400_000;
+  return ((data ?? []) as Omit<Match, 'days'>[])
+    .map((m) => ({ ...m, days: Math.abs(Math.round(day(m.date) - day(date))) }))
+    .sort((a, b) => a.days - b.days);
+}
+
+/**
+ * Fold an already-saved receipt movement into an older movement of the same purchase:
+ * line items, merchant, store and document move to the target; the receipt's own movement is deleted.
+ */
+export async function mergeReceiptInto(receiptTxId: string, targetId: string) {
+  const src = await must<{ document_id: string | null; merchant_id: string | null; store_id: string | null; category_id: string | null; needs_review: boolean; billing_start: string | null; billing_end: string | null }>(
+    supabase.from('transactions').select('document_id, merchant_id, store_id, category_id, needs_review, billing_start, billing_end').eq('id', receiptTxId).single(),
+  );
+  await run(supabase.from('line_items').update({ transaction_id: targetId }).eq('transaction_id', receiptTxId));
+  await run(supabase.from('transactions').update({ document_id: null }).eq('id', receiptTxId));
+  await must(supabase.from('transactions').update(src).eq('id', targetId).select('id').single());
+  await run(supabase.from('transactions').delete().eq('id', receiptTxId));
 }
