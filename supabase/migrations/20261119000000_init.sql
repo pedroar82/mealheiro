@@ -205,20 +205,63 @@ create unique index bank_lines_one_per_tx on public.bank_lines (transaction_id)
 -- ---------------------------------------------------------------------------
 -- updated_at triggers + RLS
 -- ---------------------------------------------------------------------------
-do $$
-declare t text;
-begin
-  foreach t in array array['categories','accounts','merchants','stores','products','imports',
-                           'documents','transactions','line_items','rules','bank_lines']
-  loop
-    execute format('create trigger %I_updated_at before update on public.%I
-                    for each row execute function public.set_updated_at()', t, t);
-    execute format('alter table public.%I enable row level security', t);
-    execute format('create policy "own rows" on public.%I for all to authenticated
-                    using (user_id = (select auth.uid()))
-                    with check (user_id = (select auth.uid()))', t);
-  end loop;
-end $$;
+create trigger categories_updated_at before update on public.categories
+  for each row execute function public.set_updated_at();
+create trigger accounts_updated_at before update on public.accounts
+  for each row execute function public.set_updated_at();
+create trigger merchants_updated_at before update on public.merchants
+  for each row execute function public.set_updated_at();
+create trigger stores_updated_at before update on public.stores
+  for each row execute function public.set_updated_at();
+create trigger products_updated_at before update on public.products
+  for each row execute function public.set_updated_at();
+create trigger imports_updated_at before update on public.imports
+  for each row execute function public.set_updated_at();
+create trigger documents_updated_at before update on public.documents
+  for each row execute function public.set_updated_at();
+create trigger transactions_updated_at before update on public.transactions
+  for each row execute function public.set_updated_at();
+create trigger line_items_updated_at before update on public.line_items
+  for each row execute function public.set_updated_at();
+create trigger rules_updated_at before update on public.rules
+  for each row execute function public.set_updated_at();
+create trigger bank_lines_updated_at before update on public.bank_lines
+  for each row execute function public.set_updated_at();
+
+alter table public.categories enable row level security;
+alter table public.accounts enable row level security;
+alter table public.merchants enable row level security;
+alter table public.stores enable row level security;
+alter table public.products enable row level security;
+alter table public.imports enable row level security;
+alter table public.documents enable row level security;
+alter table public.transactions enable row level security;
+alter table public.line_items enable row level security;
+alter table public.rules enable row level security;
+alter table public.bank_lines enable row level security;
+
+create policy "own rows" on public.categories for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "own rows" on public.accounts for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "own rows" on public.merchants for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "own rows" on public.stores for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "own rows" on public.products for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "own rows" on public.imports for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "own rows" on public.documents for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "own rows" on public.transactions for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "own rows" on public.line_items for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "own rows" on public.rules for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+create policy "own rows" on public.bank_lines for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 
 -- ---------------------------------------------------------------------------
 -- spending facts: one row per line item, or per transaction without items (SPEC §3.1)
