@@ -58,6 +58,9 @@ export default function Adicionar() {
 
       {Platform.OS === 'web' && (
         <View>
+          <Link href="/importar-documento" style={styles.importLink}>
+            Importar talão ou fatura (foto/PDF) ›
+          </Link>
           <Link href="/importar-extrato" style={styles.importLink}>
             Importar extrato CGD (CSV) ›
           </Link>

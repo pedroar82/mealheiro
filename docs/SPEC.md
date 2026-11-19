@@ -363,7 +363,7 @@ note when the period includes history without product detail.
 ## 10. Open questions
 
 1. ~~Excel `Ativos` values other than `Banco`~~ → resolved 19/11/2026: Carteira.
-2. Receipts paid in cash vs card: should the app ask the account on save (helps bank linking)?
+2. ~~Receipts paid in cash vs card~~ → resolved 19/11/2026: don't ask; receipts have no account, bank import links them.
 3. Other banks/cards besides CGD (credit card statements)?
 
 ## 11. Decisions log
@@ -375,3 +375,8 @@ note when the period includes history without product detail.
   queue). Categories chosen there are saved as `bank_desc` prefix rules (key = words before the first token with digits,
   max 3). Created transactions get `external_key = bank:<fingerprint>` so a retried import never duplicates.
   Refund auto-detection only for `CREDIT VOUCHER`; other credits are income. Merchants not created yet.
+- 19/11/2026 — Scanning: iPhone uses the camera (QR + photo); web is for uploading a photo or PDF (no QR decoding on web —
+  the model reads NIF / document number as printed). Payment method is not asked. Edge Function `extract-receipt`
+  (Claude via Anthropic SDK, structured JSON output, server-side refusal fallback); model set by secret `RECEIPT_MODEL`
+  (default `claude-opus-5-5`). Line-item categories: user rule (exact printed text) > model guess with confidence ≥ 0.6
+  (flagged as suggestion) > Por categorizar. Discount lines follow the receipt's main category.

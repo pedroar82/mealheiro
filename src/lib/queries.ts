@@ -88,7 +88,29 @@ export function useSaveTransaction() {
 export function useDeleteTransaction() {
   const invalidate = useInvalidateMovements();
   return useMutation({
-    mutationFn: (id: string) => unwrap(supabase.from('transactions').delete().eq('id', id)),
+    mutationFn: async (id: string) => {
+      const tx = await unwrap<{ document_id: string | null }>(supabase.from('transactions').select('document_id').eq('id', id).single());
+      await unwrap(supabase.from('transactions').delete().eq('id', id));
+      // drop the receipt's metadata too, so the same invoice can be imported again
+      if (tx.document_id) await unwrap(supabase.from('documents').delete().eq('id', tx.document_id));
+    },
     onSuccess: invalidate,
+  });
+}
+
+export type LineItem = { id: string; name: string; raw_text: string; quantity: number | null; unit: string | null; total_cents: number; category_id: string | null };
+
+export function useLineItems(transactionId: string | undefined) {
+  return useQuery({
+    queryKey: ['line_items', transactionId],
+    enabled: !!transactionId,
+    queryFn: () =>
+      unwrap<LineItem[]>(
+        supabase
+          .from('line_items')
+          .select('id, name, raw_text, quantity, unit, total_cents, category_id')
+          .eq('transaction_id', transactionId!)
+          .order('position'),
+      ),
   });
 }
