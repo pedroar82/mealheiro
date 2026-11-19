@@ -1,56 +1,56 @@
-# Welcome to your Expo app 👋
+# Mealheiro
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Personal expense & income tracker (iPhone + web, one Expo codebase, Supabase backend).
+Spec: [`docs/SPEC.md`](docs/SPEC.md).
 
-## Get started
+## Layout
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+src/app/            Expo Router screens (sign-in, (tabs)/…)
+src/lib/            supabase client, session provider
+src/components/     shared UI
+src/constants/      theme tokens
+supabase/migrations SQL schema (tables, RLS, spend_facts view, seed_defaults())
+docs/               spec
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+Personal data files (`*.xlsx`, `*.csv` at the root, `data/`) and `.env` are git-ignored on purpose.
 
-### Other setup steps
+## One-time setup
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+### 1. Supabase
+1. Create a project at supabase.com (EU region).
+2. **Database**: open SQL Editor, paste `supabase/migrations/20261119000000_init.sql`, run.
+   (Or with the CLI: `npx supabase login`, `npx supabase link --project-ref <ref>`, `npx supabase db push`.)
+3. **Your user**: Authentication → Users → *Add user* → email + password, *Auto confirm*.
+4. **Close sign-ups**: Authentication → Sign In / Providers → Email → turn off *Allow new users to sign up*.
+5. Copy `.env.example` to `.env` and fill in the Project URL and the **publishable** key
+   (Project Settings → API). Never put the `service_role` key in the app.
 
-## Learn more
+### 2. Run on the web (PC)
+```sh
+npm install
+npx expo start --web
+```
+Sign in → Início shows your email and the number of categories (created automatically on first login).
 
-To learn more about developing your project with Expo, look at the following resources:
+### 3. Run on the iPhone (development build)
+```sh
+npx eas-cli@latest login
+npx eas-cli@latest init                     # links the project, writes projectId to app.json
+npx eas-cli@latest device:create            # registers your iPhone (open the link on the phone)
+npx eas-cli@latest build --profile development --platform ios
+```
+Install the build from the link EAS gives you, then on the PC:
+```sh
+npx expo start --dev-client                 # add --tunnel if phone and PC are on different networks
+```
+and open the project from the Mealheiro dev app on the phone.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+`app.json` uses the bundle id `com.mealheiro.app` — change it to one you own (e.g. `pt.<yourname>.mealheiro`) before the first build.
 
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Checks
+```sh
+npx tsc --noEmit
+npx expo lint
+```
