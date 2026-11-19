@@ -25,6 +25,7 @@ function RootNavigator() {
           options={{ presentation: 'modal', headerShown: true, title: 'Movimento', headerBackTitle: 'Voltar' }}
         />
         <Stack.Screen name="importar-excel" options={{ headerShown: true, title: 'Importar Excel', headerBackTitle: 'Voltar' }} />
+        <Stack.Screen name="importar-extrato" options={{ headerShown: true, title: 'Importar extrato', headerBackTitle: 'Voltar' }} />
       </Stack.Protected>
       <Stack.Protected guard={!session}>
         <Stack.Screen name="sign-in" />

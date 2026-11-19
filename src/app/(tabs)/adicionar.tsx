@@ -57,9 +57,14 @@ export default function Adicionar() {
       </Card>
 
       {Platform.OS === 'web' && (
-        <Link href="/importar-excel" style={styles.importLink}>
-          Importar histórico do Excel ›
-        </Link>
+        <View>
+          <Link href="/importar-extrato" style={styles.importLink}>
+            Importar extrato CGD (CSV) ›
+          </Link>
+          <Link href="/importar-excel" style={styles.importLink}>
+            Importar histórico do Excel ›
+          </Link>
+        </View>
       )}
     </Screen>
   );

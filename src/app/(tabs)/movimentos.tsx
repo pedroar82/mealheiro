@@ -26,7 +26,7 @@ export default function Movimentos() {
     const list = (tx.data ?? []).filter((t) => {
       if (filter === 'expense' && t.kind !== 'expense') return false;
       if (filter === 'income' && t.kind !== 'income') return false;
-      if (filter === 'review' && !(t.needs_review || (!t.category_id && t.kind !== 'transfer'))) return false;
+      if (filter === 'review' && !(t.needs_review || (!t.category_id && t.kind !== 'transfer' && t.kind !== 'refund'))) return false;
       if (!q) return true;
       return [t.description, categoryPath(index, t.category_id)].some((s) => s?.toLowerCase().includes(q));
     });
@@ -38,7 +38,7 @@ export default function Movimentos() {
     return [...byDay.entries()].map(([date, items]) => ({
       date,
       items,
-      spent: items.filter((t) => t.kind === 'expense').reduce((s, t) => s + t.amount_cents, 0),
+      spent: items.reduce((s, t) => s + (t.kind === 'expense' ? t.amount_cents : t.kind === 'refund' ? -t.amount_cents : 0), 0),
     }));
   }, [tx.data, query, filter, index]);
 

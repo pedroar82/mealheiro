@@ -9,10 +9,11 @@ import type { Account, Transaction } from '@/lib/types';
 export function TransactionRow({ tx, index, accounts }: { tx: Transaction; index: CategoryIndex; accounts?: Account[] }) {
   const income = tx.kind === 'income';
   const transfer = tx.kind === 'transfer';
+  const refund = tx.kind === 'refund';
   const title = tx.description || (tx.category_id ? index.byId.get(tx.category_id)?.name : null) || (income ? 'Receita' : 'Despesa');
   const account = accounts?.find((a) => a.id === tx.account_id)?.name;
-  const subtitle = [transfer ? 'Transferência' : categoryPath(index, tx.category_id), account].filter(Boolean).join(' · ');
-  const amount = income ? formatEUR(tx.amount_cents, { sign: true }) : transfer ? formatEUR(tx.amount_cents) : formatEUR(-tx.amount_cents);
+  const subtitle = [transfer ? 'Transferência' : refund ? 'Reembolso' : categoryPath(index, tx.category_id), account].filter(Boolean).join(' · ');
+  const amount = income || refund ? formatEUR(tx.amount_cents, { sign: true }) : transfer ? formatEUR(tx.amount_cents) : formatEUR(-tx.amount_cents);
 
   return (
     <Pressable
@@ -27,7 +28,7 @@ export function TransactionRow({ tx, index, accounts }: { tx: Transaction; index
       </View>
       <View style={styles.main}>
         <Text style={styles.title} numberOfLines={1}>{title}</Text>
-        <Text style={[styles.subtitle, !tx.category_id && !transfer && { color: colors.warning }]} numberOfLines={1}>
+        <Text style={[styles.subtitle, !tx.category_id && !transfer && !refund && { color: colors.warning }]} numberOfLines={1}>
           {subtitle}
         </Text>
       </View>

@@ -291,7 +291,8 @@ Applies to Excel history (31 of 94 lines in the sample) and to scanned receipts 
 (the receipt keeps the detail; the bank line just confirms payment).
 
 ### 6.3 Rule 3 — not spending
-- **ATM withdrawals** (`bank_category = LEVANTAMENTOS` or description starts `ATM `): create a
+- **ATM withdrawals** (description starts `ATM ` — *not* `bank_category = LEVANTAMENTOS`, which CGD also uses for
+  fees and some purchases): create a
   `transfer` bank → Carteira. **Not counted as spending.** Cash spending is entered manually/scanned.
 - **Refunds**: credit that matches an earlier debit (same amount within 60 days, or `CREDIT VOUCHER`)
   → `kind='refund'`, `refund_of_id` = original. Net effect zero; not income.
@@ -370,3 +371,7 @@ note when the period includes history without product detail.
 - 19/11/2026 — No budgets. ATM withdrawals are transfers, not spending. CGD CSV import is recurring.
 - 19/11/2026 — Receipt images/PDFs are not kept; only extracted data (items, totals, store) is stored.
 - 19/11/2026 — Excel import: non-`Banco` `Ativos` → Carteira; time of day dropped (date only). Excel read client-side with SheetJS (CDN build, Apache-2.0; npm `xlsx` is outdated).
+- 19/11/2026 — CGD import: ambiguous links, MB Way and refunds are decided in the import preview (no separate review
+  queue). Categories chosen there are saved as `bank_desc` prefix rules (key = words before the first token with digits,
+  max 3). Created transactions get `external_key = bank:<fingerprint>` so a retried import never duplicates.
+  Refund auto-detection only for `CREDIT VOUCHER`; other credits are income. Merchants not created yet.

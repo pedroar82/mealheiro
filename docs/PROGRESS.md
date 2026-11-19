@@ -24,7 +24,7 @@ Last updated: 19/11/2026. Read with `docs/SPEC.md` (requirements, data model, de
    category mapping (emoji stripped, "Despesas de casa"→Casa, "dom"→Prendas, "Eventos"→Lazer › Eventos),
    skip 5 "Modificar Saldo" rows, `external_key` hash, optional AI subcategory suggestions (later, needs Edge Function).
    `Ativos`: `Banco` → CGD à ordem, others → Carteira (assumption, open question 1).
-2. CGD CSV import (recurring; `movimentos.csv`, format + dedup rules in SPEC §6): Latin-1, `;`, header found by content,
+2. CGD CSV import — **done, user imported movimentos.csv 19/11/2026** (`src/lib/cgd-import.ts`, `src/app/importar-extrato.tsx`). Spec was (recurring; `movimentos.csv`, format + dedup rules in SPEC §6): Latin-1, `;`, header found by content,
    balance-chain check, fingerprint incl. balance, fuzzy link to existing tx (amount, ±3 days), ATM → transfer to Carteira
    (not spending), refunds (`CREDIT VOUCHER`/matching debit) → `refund`, MB Way → review, bank fees → Banco › Comissões,
    `bank_desc` rules for merchant/category. Import Excel **before** first CSV.

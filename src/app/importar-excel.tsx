@@ -17,6 +17,7 @@ import {
   type ParseResult,
 } from '@/lib/excel-import';
 import { formatDate, formatEUR } from '@/lib/format';
+import { fetchAll, pickFile } from '@/lib/import-io';
 import { useAccounts, useCategories } from '@/lib/queries';
 import { supabase } from '@/lib/supabase';
 
@@ -25,31 +26,12 @@ type Done = { inserted: number; already: number };
 
 const BATCH = 500;
 
-/** Web: open the browser's file dialog and resolve with the chosen file. */
-function pickFile(accept: string): Promise<File | null> {
-  return new Promise((resolve) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = accept;
-    input.onchange = () => resolve(input.files?.[0] ?? null);
-    input.click();
-  });
-}
-
-/** external_keys of rows already imported from Excel (paged: the API returns at most 1000 rows per call). */
+/** external_keys of rows already imported from Excel. */
 async function fetchExistingKeys(): Promise<Set<string>> {
-  const keys = new Set<string>();
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('external_key')
-      .eq('source', 'excel')
-      .order('id')
-      .range(from, from + 999);
-    if (error) throw new Error(error.message);
-    for (const r of data ?? []) if (r.external_key) keys.add(r.external_key);
-    if (!data || data.length < 1000) return keys;
-  }
+  const rows = await fetchAll<{ external_key: string | null }>((from, to) =>
+    supabase.from('transactions').select('external_key').eq('source', 'excel').order('id').range(from, to),
+  );
+  return new Set(rows.map((r) => r.external_key).filter((k): k is string => !!k));
 }
 
 export default function ImportarExcel() {

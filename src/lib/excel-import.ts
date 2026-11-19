@@ -2,6 +2,7 @@
 // the screen reads the sheet with SheetJS and hands the raw rows (array of arrays) here.
 
 import type { CategoryIndex } from '@/lib/categories';
+import { sha256Hex } from '@/lib/hash';
 import type { Account, Category, CategoryKind } from '@/lib/types';
 
 export type ExcelRow = {
@@ -158,13 +159,6 @@ export function pickAccounts(accounts: Account[]) {
   const bank = accounts.find((a) => a.type === 'bank' && a.name === 'CGD à ordem') ?? accounts.find((a) => a.type === 'bank');
   const cash = accounts.find((a) => a.type === 'cash' && a.name === 'Carteira') ?? accounts.find((a) => a.type === 'cash');
   return { bank, cash };
-}
-
-async function sha256Hex(text: string): Promise<string> {
-  const subtle = globalThis.crypto?.subtle;
-  if (!subtle) throw new Error('Este browser não suporta SHA-256 (crypto.subtle). Abra a app em https ou localhost.');
-  const buf = await subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** `excel:<sha256>`; identical rows get an occurrence suffix so none is lost. */
