@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
-import Svg, { Circle, G, Line, Path, Rect } from 'react-native-svg';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 
 import { chartColors, colors, space } from '@/constants/theme';
 import { formatEUR } from '@/lib/format';
@@ -41,15 +41,17 @@ export function BarChart({ bars, height = 150, label }: { bars: Bar[]; height?: 
               const d = h > 0
                 ? `M${x},${plotH} V${plotH - h + r} Q${x},${plotH - h} ${x + r},${plotH - h} H${x + barW - r} Q${x + barW},${plotH - h} ${x + barW},${plotH - h + r} V${plotH} Z`
                 : '';
-              return (
-                <G key={b.key}>
-                  {d ? <Path d={d} fill={isSel ? chartColors.bar : chartColors.barMuted} /> : null}
-                  {/* hit target larger than the mark */}
-                  <Rect x={i * slot} y={0} width={slot} height={height} fill="transparent" onPress={() => setSelected(b.key)} />
-                </G>
-              );
+              return d ? <Path key={b.key} d={d} fill={isSel ? chartColors.bar : chartColors.barMuted} /> : null;
             })}
           </Svg>
+        )}
+        {/* hit targets larger than the marks; Pressable instead of SVG onPress (which leaks responder props to the DOM on web) */}
+        {width > 0 && (
+          <View style={[StyleSheet.absoluteFill, styles.hitRow]}>
+            {bars.map((b) => (
+              <Pressable key={b.key} style={{ width: slot, height }} onPress={() => setSelected(b.key)} accessible={false} />
+            ))}
+          </View>
         )}
       </View>
       <View style={styles.axis}>
@@ -85,8 +87,9 @@ export function Donut({ slices, size = 150, centerLabel }: { slices: Slice[]; si
   return (
     <View style={styles.donutRow}>
       <View style={{ width: size, height: size }}>
-        <Svg width={size} height={size} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          <G rotation={-90} origin={`${size / 2}, ${size / 2}`}>
+        {/* decorative: the legend carries the data. aria-hidden on a View, not on Svg (which forwards props to the DOM on web) */}
+        <View aria-hidden>
+        <Svg width={size} height={size}>
             {total === 0 && <Circle cx={size / 2} cy={size / 2} r={r} stroke={colors.border} strokeWidth={stroke} fill="none" />}
             {slices.map((s, i) => {
               const dash = Math.max(0, lengths[i] - gap);
@@ -100,12 +103,14 @@ export function Donut({ slices, size = 150, centerLabel }: { slices: Slice[]; si
                   strokeWidth={stroke}
                   fill="none"
                   strokeDasharray={`${dash} ${c - dash}`}
-                  strokeDashoffset={-offsets[i]}
+                  // circle strokes start at 3 o'clock; +c/4 starts the first segment at 12 o'clock
+                  // (instead of a <G rotation>, whose origin prop leaks as `transform-origin` on web)
+                  strokeDashoffset={c / 4 - offsets[i]}
                 />
               );
             })}
-          </G>
         </Svg>
+        </View>
         <View style={[StyleSheet.absoluteFill, styles.center]}>
           <Text style={styles.centerSmall}>{centerLabel}</Text>
           <Text style={styles.centerBig}>{formatEUR(total, { decimals: false })}</Text>
@@ -129,6 +134,7 @@ export function Donut({ slices, size = 150, centerLabel }: { slices: Slice[]; si
 const styles = StyleSheet.create({
   readout: { fontSize: 13, color: colors.muted },
   axis: { flexDirection: 'row' },
+  hitRow: { flexDirection: 'row' },
   tick: { fontSize: 11, color: colors.muted, textAlign: 'center' },
   donutRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.md },
   center: { alignItems: 'center', justifyContent: 'center' },

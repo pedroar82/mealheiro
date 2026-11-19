@@ -361,7 +361,7 @@ note when the period includes history without product detail.
 
 ## 10. Open questions
 
-1. Excel `Ativos` values other than `Banco` ("Orçamento <mês>"): mapped to "Carteira" — confirm.
+1. ~~Excel `Ativos` values other than `Banco`~~ → resolved 19/11/2026: Carteira.
 2. Receipts paid in cash vs card: should the app ask the account on save (helps bank linking)?
 3. Other banks/cards besides CGD (credit card statements)?
 
@@ -369,3 +369,4 @@ note when the period includes history without product detail.
 
 - 19/11/2026 — No budgets. ATM withdrawals are transfers, not spending. CGD CSV import is recurring.
 - 19/11/2026 — Receipt images/PDFs are not kept; only extracted data (items, totals, store) is stored.
+- 19/11/2026 — Excel import: non-`Banco` `Ativos` → Carteira; time of day dropped (date only). Excel read client-side with SheetJS (CDN build, Apache-2.0; npm `xlsx` is outdated).

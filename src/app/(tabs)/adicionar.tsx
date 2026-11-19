@@ -1,5 +1,6 @@
+import { Link } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '@/components/screen';
 import { TransactionForm } from '@/components/transaction-form';
@@ -54,6 +55,12 @@ export default function Adicionar() {
           }
         />
       </Card>
+
+      {Platform.OS === 'web' && (
+        <Link href="/importar-excel" style={styles.importLink}>
+          Importar histórico do Excel ›
+        </Link>
+      )}
     </Screen>
   );
 }
@@ -67,4 +74,5 @@ const styles = StyleSheet.create({
   saved: { backgroundColor: '#DDF2E9', borderRadius: radius.md, padding: space.md },
   savedText: { color: '#11573F', fontSize: 14, fontWeight: '600' },
   error: { color: colors.danger, fontSize: 14 },
+  importLink: { color: colors.accent, fontSize: 15, fontWeight: '600', paddingVertical: space.sm },
 });

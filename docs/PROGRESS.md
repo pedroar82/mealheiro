@@ -14,8 +14,13 @@ Last updated: 19/11/2026. Read with `docs/SPEC.md` (requirements, data model, de
   Charts: hand-drawn `react-native-svg`, palette validated with the dataviz validator (`seriesPalette` in theme).
   tsc + lint + web export pass; format helpers unit-checked. **Not yet visually checked logged in** — user to test with `npx expo start --web`.
 
+- **Web chart fixes** — react-native-svg props leaked to the DOM on web (`onPress` on `<Rect>`, a11y props on `<Svg>`,
+  `<G rotation origin>`). Bars use a `Pressable` overlay; donut uses `aria-hidden` View + dashoffset instead of rotation.
+- **Phase 2 step 1 — Excel import done** (`src/lib/excel-import.ts`, `src/app/importar-excel.tsx`, link in Adicionar on web).
+  SheetJS 0.20.3 from cdn.sheetjs.com. User imported the real file (1 405 rows, 5 balance fixes skipped) on 19/11/2026.
+
 ## Next — Phase 2 (imports)
-1. Excel one-time import (`2026-11-19.xlsx`, format in SPEC §7): web screen, SheetJS client-side,
+1. ~~Excel one-time import~~ (done) (`2026-11-19.xlsx`, format in SPEC §7): web screen, SheetJS client-side,
    category mapping (emoji stripped, "Despesas de casa"→Casa, "dom"→Prendas, "Eventos"→Lazer › Eventos),
    skip 5 "Modificar Saldo" rows, `external_key` hash, optional AI subcategory suggestions (later, needs Edge Function).
    `Ativos`: `Banco` → CGD à ordem, others → Carteira (assumption, open question 1).
