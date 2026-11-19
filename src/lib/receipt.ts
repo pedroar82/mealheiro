@@ -75,7 +75,46 @@ const validDate = (s: string | null) => (s && ISO.test(s) && !isNaN(Date.parse(s
 /** Line rules are keyed by the normalised printed text ('LEITE MIMOSA M/G 1L'). */
 export const linePattern = (raw: string) => normDesc(raw);
 
-export function buildDraft(documentId: string, kind: Draft['kind'], x: Extraction, idx: CategoryIndex, rules: LineRule[]): Draft {
+/** Fields of the Portuguese invoice QR (Portaria 195/2020): 'A:123456789*B:999999990*…*O:6.89'. */
+export type AtQr = {
+  raw: string;
+  sellerNif: string;
+  buyerNif: string | null;
+  docType: string | null;
+  date: string | null;
+  docNumber: string | null;
+  atcud: string | null;
+  vatCents: number | null;
+  totalCents: number | null;
+};
+
+export function parseAtQr(raw: string): AtQr | null {
+  const f = new Map<string, string>();
+  for (const part of raw.split('*')) {
+    const i = part.indexOf(':');
+    if (i > 0) f.set(part.slice(0, i).trim(), part.slice(i + 1).trim());
+  }
+  const nif = f.get('A')?.replace(/\D/g, '');
+  const d = f.get('F');
+  if (!nif || nif.length !== 9 || !d || !/^\d{8}$/.test(d)) return null; // not an AT invoice QR
+  const money = (k: string) => {
+    const v = f.get(k);
+    return v && /^-?\d+(\.\d+)?$/.test(v) ? toCents(Number(v)) : null;
+  };
+  return {
+    raw,
+    sellerNif: nif,
+    buyerNif: f.get('B') ?? null,
+    docType: f.get('D') ?? null,
+    date: `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`,
+    docNumber: f.get('G') ?? null,
+    atcud: f.get('H') ?? null,
+    vatCents: money('N'),
+    totalCents: money('O'),
+  };
+}
+
+export function buildDraft(documentId: string, kind: Draft['kind'], x: Extraction, idx: CategoryIndex, rules: LineRule[], qr?: AtQr | null): Draft {
   const byPath = new Map<string, string>();
   for (const c of idx.byId.values()) if (c.kind === 'expense') byPath.set(normDesc(categoryPath(idx, c.id)), c.id);
   const ruleFor = new Map(rules.filter((r) => r.category_id && idx.byId.has(r.category_id)).map((r) => [r.pattern, r.category_id!]));
@@ -99,7 +138,8 @@ export function buildDraft(documentId: string, kind: Draft['kind'], x: Extractio
   });
 
   const sum = lines.reduce((s, l) => s + l.total_cents, 0);
-  return {
+  const date = validDate(qr?.date ?? null) ?? validDate(x.date);
+  const draft: Draft = {
     documentId,
     kind,
     merchantName: x.merchant_name?.trim() || x.store_name?.trim() || '',
@@ -109,13 +149,25 @@ export function buildDraft(documentId: string, kind: Draft['kind'], x: Extractio
     docType: x.doc_type,
     docNumber: x.doc_number?.trim() || null,
     atcud: x.atcud,
-    date: validDate(x.date) ?? todayISO(),
+    date: date ?? todayISO(),
     totalCents: x.total != null ? toCents(x.total) : sum, // printed total wins over the sum of lines
     vatCents: x.vat_total == null ? null : toCents(x.vat_total),
     billingStart: validDate(x.billing_start),
     billingEnd: validDate(x.billing_end),
     lines,
-    warnings: [...x.warnings, ...(validDate(x.date) ? [] : ['Data não encontrada — confirme.'])],
+    warnings: [...x.warnings, ...(date ? [] : ['Data não encontrada — confirme.'])],
+  };
+  if (!qr) return draft;
+  // the QR is authoritative for what it contains (SPEC §4.2 step 6)
+  return {
+    ...draft,
+    sellerNif: qr.sellerNif,
+    docType: qr.docType ?? draft.docType,
+    docNumber: qr.docNumber ?? draft.docNumber,
+    atcud: qr.atcud ?? draft.atcud,
+    date: date ?? draft.date,
+    totalCents: qr.totalCents ?? draft.totalCents,
+    vatCents: qr.vatCents ?? draft.vatCents,
   };
 }
 
@@ -145,15 +197,11 @@ async function must<T = Row>(p: Result): Promise<T> {
 }
 
 /** Already saved receipt with the same seller NIF and document number, if any. */
-export async function findDuplicate(d: Pick<Draft, 'documentId' | 'sellerNif' | 'docNumber'>) {
+export async function findDuplicate(d: { documentId?: string; sellerNif: string | null; docNumber: string | null }) {
   if (!d.sellerNif || !d.docNumber) return null;
-  const { data } = await supabase
-    .from('documents')
-    .select('id, issue_date')
-    .eq('seller_nif', d.sellerNif)
-    .eq('doc_number', d.docNumber)
-    .neq('id', d.documentId)
-    .limit(1);
+  let q = supabase.from('documents').select('id, issue_date').eq('seller_nif', d.sellerNif).eq('doc_number', d.docNumber);
+  if (d.documentId) q = q.neq('id', d.documentId);
+  const { data } = await q.limit(1);
   return data?.[0] ?? null;
 }
 
@@ -266,4 +314,72 @@ export async function saveDraft(d: Draft, storagePath: string | null): Promise<s
   if (storagePath) await supabase.storage.from('uploads').remove([storagePath]);
   await must(supabase.from('documents').update({ status: 'done', storage_path: null }).eq('id', d.documentId).select('id'));
   return tx.id;
+}
+
+/** RFC 4122 v4 id (crypto.getRandomValues is polyfilled on native by react-native-get-random-values). */
+export function uuid(): string {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+export function base64ToBytes(b64: string): Uint8Array {
+  const clean = b64.replace(/[^A-Za-z0-9+/]/g, '');
+  const out = new Uint8Array(Math.floor((clean.length * 3) / 4));
+  let o = 0;
+  for (let i = 0; i < clean.length; i += 4) {
+    const n = (B64.indexOf(clean[i]) << 18) | (B64.indexOf(clean[i + 1]) << 12) | ((B64.indexOf(clean[i + 2]) & 63) << 6) | (B64.indexOf(clean[i + 3]) & 63);
+    out[o++] = (n >> 16) & 255;
+    if (i + 2 < clean.length) out[o++] = (n >> 8) & 255;
+    if (i + 3 < clean.length) out[o++] = n & 255;
+  }
+  return out.subarray(0, o);
+}
+
+export type Uploaded = { documentId: string; storagePath: string; extraction: Extraction };
+
+/**
+ * Upload the file to the private `uploads` bucket, create the `documents` row and run the Edge Function.
+ * On failure everything created is removed again.
+ */
+export async function uploadAndExtract(opts: {
+  userId: string;
+  body: Blob | ArrayBuffer | Uint8Array;
+  ext: 'jpg' | 'pdf';
+  kind: Draft['kind'];
+  qrRaw?: string | null;
+}): Promise<Uploaded> {
+  const path = `${opts.userId}/${uuid()}.${opts.ext}`;
+  let documentId: string | null = null;
+  try {
+    const up = await supabase.storage
+      .from('uploads')
+      .upload(path, opts.body, { contentType: opts.ext === 'pdf' ? 'application/pdf' : 'image/jpeg' });
+    if (up.error) throw new Error(up.error.message);
+    const doc = await must(
+      supabase.from('documents').insert({ type: opts.kind, storage_path: path, status: 'processing', qr_raw: opts.qrRaw ?? null }).select('id').single(),
+    );
+    documentId = doc.id;
+
+    const res = await supabase.functions.invoke<{ extraction: Extraction }>('extract-receipt', { body: { document_id: doc.id } });
+    if (res.error) {
+      // the function answers JSON { error } on failure; show that message when present
+      const body = await (res.error as { context?: Response }).context?.json?.().catch(() => null);
+      throw new Error(body?.error ?? res.error.message);
+    }
+    return { documentId: doc.id, storagePath: path, extraction: res.data!.extraction };
+  } catch (e) {
+    if (documentId) await discardDocument(documentId, path);
+    else await supabase.storage.from('uploads').remove([path]);
+    throw e;
+  }
+}
+
+export async function loadLineRules(): Promise<LineRule[]> {
+  const { data } = await supabase.from('rules').select('pattern, category_id').eq('scope', 'line_item');
+  return (data ?? []) as LineRule[];
 }

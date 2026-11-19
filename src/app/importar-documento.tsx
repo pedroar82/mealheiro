@@ -8,9 +8,8 @@ import { Button, Card, Muted } from '@/components/ui';
 import { colors, space } from '@/constants/theme';
 import { errorText, pickFile } from '@/lib/import-io';
 import { useCategories } from '@/lib/queries';
-import { buildDraft, discardDocument, DUPLICATE, saveDraft, type Draft, type Extraction, type LineRule } from '@/lib/receipt';
+import { buildDraft, discardDocument, DUPLICATE, loadLineRules, saveDraft, uploadAndExtract, type Draft } from '@/lib/receipt';
 import { useSession } from '@/lib/session';
-import { supabase } from '@/lib/supabase';
 
 const MAX_SIDE = 2000; // the model downsizes larger images anyway; smaller uploads are faster
 
@@ -60,32 +59,15 @@ export default function ImportarDocumento() {
     setError(null);
     const file = await pickFile('image/*,application/pdf');
     if (!file) return;
-    let docId: string | null = null;
-    let path: string | null = null;
     try {
       setStage('uploading');
       const { blob, ext, kind } = await prepare(file);
-      path = `${uid}/${crypto.randomUUID()}.${ext}`;
-      const up = await supabase.storage.from('uploads').upload(path, blob, { contentType: ext === 'pdf' ? 'application/pdf' : 'image/jpeg' });
-      if (up.error) throw new Error(up.error.message);
-      const doc = await supabase.from('documents').insert({ type: kind, storage_path: path, status: 'processing' }).select('id').single();
-      if (doc.error) throw new Error(doc.error.message);
-      docId = doc.data.id;
-
       setStage('reading');
-      const res = await supabase.functions.invoke<{ extraction: Extraction; error?: string }>('extract-receipt', { body: { document_id: docId } });
-      if (res.error) {
-        // the function answers JSON { error } on failure; show that message when present
-        const body = await (res.error as { context?: Response }).context?.json?.().catch(() => null);
-        throw new Error(body?.error ?? res.error.message);
-      }
-      const rules = await supabase.from('rules').select('pattern, category_id').eq('scope', 'line_item');
-      setStoragePath(path);
-      setDraft(buildDraft(docId!, kind, res.data!.extraction, index, (rules.data ?? []) as LineRule[]));
+      const up = await uploadAndExtract({ userId: uid, body: blob, ext: ext as 'jpg' | 'pdf', kind });
+      setStoragePath(up.storagePath);
+      setDraft(buildDraft(up.documentId, kind, up.extraction, index, await loadLineRules()));
       setStage('review');
     } catch (e) {
-      if (docId) await discardDocument(docId, path);
-      else if (path) await supabase.storage.from('uploads').remove([path]);
       setError(errorText(e));
       setStage('pick');
     }

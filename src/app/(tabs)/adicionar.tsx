@@ -1,6 +1,6 @@
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '@/components/screen';
 import { TransactionForm } from '@/components/transaction-form';
@@ -8,6 +8,8 @@ import { Card } from '@/components/ui';
 import { colors, radius, space } from '@/constants/theme';
 import { formatEUR } from '@/lib/format';
 import { useSaveTransaction } from '@/lib/queries';
+
+const web = Platform.OS === 'web';
 
 export default function Adicionar() {
   const save = useSaveTransaction();
@@ -20,14 +22,28 @@ export default function Adicionar() {
         <View style={[styles.source, styles.sourceOn]}>
           <Text style={[styles.sourceText, { color: colors.accent }]}>Manual</Text>
         </View>
-        <View style={styles.source} accessibilityState={{ disabled: true }}>
-          <Text style={styles.sourceText}>Digitalizar</Text>
-          <Text style={styles.soon}>em breve</Text>
-        </View>
-        <View style={styles.source} accessibilityState={{ disabled: true }}>
-          <Text style={styles.sourceText}>PDF</Text>
-          <Text style={styles.soon}>em breve</Text>
-        </View>
+        {/* iPhone: camera with QR; web: upload a photo or PDF (decision 19/11/2026) */}
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push(web ? '/importar-documento' : '/digitalizar')}
+          style={({ pressed }) => [styles.source, styles.sourceLive, pressed && { opacity: 0.7 }]}>
+          <Text style={styles.sourceText}>{web ? 'Foto' : 'Digitalizar'}</Text>
+          <Text style={styles.soon}>{web ? 'talão' : 'câmara'}</Text>
+        </Pressable>
+        {web ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('/importar-documento')}
+            style={({ pressed }) => [styles.source, styles.sourceLive, pressed && { opacity: 0.7 }]}>
+            <Text style={styles.sourceText}>PDF</Text>
+            <Text style={styles.soon}>fatura</Text>
+          </Pressable>
+        ) : (
+          <View style={styles.source} accessibilityState={{ disabled: true }}>
+            <Text style={styles.sourceText}>PDF</Text>
+            <Text style={styles.soon}>em breve</Text>
+          </View>
+        )}
       </View>
 
       {saved && (
@@ -58,9 +74,6 @@ export default function Adicionar() {
 
       {Platform.OS === 'web' && (
         <View>
-          <Link href="/importar-documento" style={styles.importLink}>
-            Importar talão ou fatura (foto/PDF) ›
-          </Link>
           <Link href="/importar-extrato" style={styles.importLink}>
             Importar extrato CGD (CSV) ›
           </Link>
@@ -76,6 +89,7 @@ export default function Adicionar() {
 const styles = StyleSheet.create({
   sources: { flexDirection: 'row', gap: space.sm },
   source: { flex: 1, minHeight: 64, borderRadius: radius.md, borderWidth: 1, borderColor: '#D5D8DF', backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center', opacity: 0.6 },
+  sourceLive: { opacity: 1 },
   sourceOn: { borderWidth: 2, borderColor: colors.accent, backgroundColor: colors.accentSoft, opacity: 1 },
   sourceText: { fontSize: 14, fontWeight: '600', color: colors.ink },
   soon: { fontSize: 11, color: colors.muted },

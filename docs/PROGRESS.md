@@ -31,7 +31,9 @@ Last updated: 19/11/2026. Read with `docs/SPEC.md` (requirements, data model, de
 3. Phase 3 — **web upload done** (function deployed, `ANTHROPIC_API_KEY` secret set, Continente PDF imported 19/11/2026): Edge Function `supabase/functions/extract-receipt`, `src/lib/receipt.ts`,
    `src/components/receipt-review.tsx` (shared with iPhone), `src/app/importar-documento.tsx`.
    Redeploy after editing the function: `npx supabase functions deploy extract-receipt --project-ref <project-ref> --use-api`.
-   iPhone camera scanning still to do (needs EAS dev build). Then phase 3 rest (scan: QR + Claude Edge Function; image deleted after save; store kept), 4 (PDF share sheet), 5 (Explorar/Análise).
+   iPhone camera scanning **done, tested in Expo Go 19/11/2026** (`src/app/digitalizar.tsx`: expo-camera QR + photo → same pipeline;
+   AT QR parsed by `parseAtQr`, QR values win over the model). Run with `npx expo start --go`. User chose Expo Go over a paid
+   Apple Developer account for now (19/11/2026). Then phase 3 rest (scan: QR + Claude Edge Function; image deleted after save; store kept), 4 (PDF share sheet), 5 (Explorar/Análise).
 
 ## Open questions (SPEC §10)
 1. Excel non-`Banco` accounts → Carteira? 2. Ask card/cash when saving a receipt? 3. Other banks/cards?

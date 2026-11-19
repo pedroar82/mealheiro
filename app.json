@@ -36,7 +36,13 @@
           "imageWidth": 76
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "O Mealheiro usa a câmara para ler talões e o código QR das faturas."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
