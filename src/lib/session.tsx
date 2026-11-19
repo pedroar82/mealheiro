@@ -11,7 +11,20 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const [state, setState] = useState<SessionState>({ session: null, loading: true });
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setState({ session: data.session, loading: false }));
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (!data.session && __DEV__) {
+        // Development convenience only: auto sign-in with credentials from .env.
+        // The whole block is stripped from production bundles (__DEV__ === false).
+        const email = process.env.EXPO_PUBLIC_DEV_EMAIL;
+        const password = process.env.EXPO_PUBLIC_DEV_PASSWORD;
+        if (email && password) {
+          const { error } = await supabase.auth.signInWithPassword({ email, password });
+          if (!error) return; // onAuthStateChange will set the session
+          console.warn('Dev auto sign-in failed:', error.message);
+        }
+      }
+      setState({ session: data.session, loading: false });
+    });
 
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       setState({ session, loading: false });

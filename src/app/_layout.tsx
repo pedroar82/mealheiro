@@ -1,6 +1,7 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { SessionProvider, useSession } from '@/lib/session';
 
@@ -19,6 +20,10 @@ function RootNavigator() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Protected guard={!!session}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen
+          name="movimento/[id]"
+          options={{ presentation: 'modal', headerShown: true, title: 'Movimento', headerBackTitle: 'Voltar' }}
+        />
       </Stack.Protected>
       <Stack.Protected guard={!session}>
         <Stack.Screen name="sign-in" />
@@ -28,9 +33,12 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
+  const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: 1 } } }));
   return (
-    <SessionProvider>
-      <RootNavigator />
-    </SessionProvider>
+    <QueryClientProvider client={queryClient}>
+      <SessionProvider>
+        <RootNavigator />
+      </SessionProvider>
+    </QueryClientProvider>
   );
 }
