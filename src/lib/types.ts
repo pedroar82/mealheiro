@@ -13,7 +13,7 @@ export type Category = {
   archived: boolean;
 };
 
-export type Account = { id: string; name: string; type: 'bank' | 'cash' | 'other' };
+export type Account = { id: string; name: string; type: 'bank' | 'cash' | 'other'; bank_ref?: string | null };
 
 export type Transaction = {
   id: string;

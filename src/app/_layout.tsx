@@ -28,6 +28,7 @@ function RootNavigator() {
         <Stack.Screen name="digitalizar" options={{ presentation: 'fullScreenModal', headerShown: false }} />
         <Stack.Screen name="importar-documento" options={{ headerShown: true, title: 'Talão ou fatura', headerBackTitle: 'Voltar' }} />
         <Stack.Screen name="importar-extrato" options={{ headerShown: true, title: 'Importar extrato', headerBackTitle: 'Voltar' }} />
+        <Stack.Screen name="definicoes" options={{ headerShown: true, title: 'Definições', headerBackTitle: 'Voltar' }} />
       </Stack.Protected>
       <Stack.Protected guard={!session}>
         <Stack.Screen name="sign-in" />

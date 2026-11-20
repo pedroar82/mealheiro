@@ -1,9 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BarChart, Donut, type Bar, type Slice } from '@/components/charts';
+import { Icon } from '@/components/icon';
 import { MonthSwitcher, useMonth } from '@/components/month-switcher';
 import { RecurringCard } from '@/components/recurring-card';
 import { Screen } from '@/components/screen';
@@ -88,7 +89,13 @@ export default function Inicio() {
   const pctSpent = income > 0 ? Math.min(100, Math.round((spent / income) * 100)) : null;
 
   return (
-    <Screen title="Início">
+    <Screen
+      title="Início"
+      action={
+        <Pressable accessibilityRole="button" accessibilityLabel="Definições" onPress={() => router.push('/definicoes')} hitSlop={8} style={styles.gear}>
+          <Icon name="settings" color={colors.ink} size={24} />
+        </Pressable>
+      }>
       <MonthSwitcher {...month} />
       {(tx.error || facts.error) && <Text style={styles.error}>{(tx.error ?? facts.error)!.message}</Text>}
 
@@ -168,6 +175,7 @@ export default function Inicio() {
 }
 
 const styles = StyleSheet.create({
+  gear: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   error: { color: colors.danger },
   hero: { backgroundColor: colors.ink, borderRadius: 20, padding: 20, gap: space.md },
   heroLabel: { fontSize: 13, color: '#C9CDD6' },

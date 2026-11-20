@@ -56,3 +56,6 @@ Last updated: 19/11/2026. Read with `docs/SPEC.md` (requirements, data model, de
   cheapest shop). Logic in `src/lib/analysis.ts`. Phase 5 left: recurring income suggestions.
 - 20/11/2026 Recurring income/expenses (uncommitted, awaiting test): `src/lib/recurring.ts`, Início card,
   import linking with different amount. This completes phase 5. Next: phase 6 (later) items or Definições.
+- 20/11/2026 Definições (uncommitted, awaiting test): gear on Início → categorias (add main/sub, rename, archive/restore;
+  archived stay in the index so old movements keep names, pickers hide them), regras (by scope, search, recategorise,
+  delete), contas (rename, add; CGD import account pinned via `bank_ref` so renames are safe), importações (history).

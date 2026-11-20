@@ -65,7 +65,7 @@ export default function EditMovimento() {
   const editable = tx.data.kind === 'expense' || tx.data.kind === 'income';
 
   return (
-    <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll}>
+    <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic">
       <View style={styles.inner}>
         <Muted>
           {[SOURCE_LABEL[tx.data.source] ?? tx.data.source, store.data?.name, store.data?.locality].filter(Boolean).join(' · ')}

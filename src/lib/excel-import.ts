@@ -156,7 +156,11 @@ export function summariseCategories(rows: ExcelRow[]): MappingRow[] {
 // Accounts + external keys
 // ---------------------------------------------------------------------------
 export function pickAccounts(accounts: Account[]) {
-  const bank = accounts.find((a) => a.type === 'bank' && a.name === 'CGD à ordem') ?? accounts.find((a) => a.type === 'bank');
+  // the account the CGD import used before (bank_ref set) wins, so renaming it in Definições doesn't break imports
+  const bank =
+    accounts.find((a) => a.type === 'bank' && a.bank_ref) ??
+    accounts.find((a) => a.type === 'bank' && a.name === 'CGD à ordem') ??
+    accounts.find((a) => a.type === 'bank');
   const cash = accounts.find((a) => a.type === 'cash' && a.name === 'Carteira') ?? accounts.find((a) => a.type === 'cash');
   return { bank, cash };
 }

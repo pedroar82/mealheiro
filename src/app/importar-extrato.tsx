@@ -298,6 +298,11 @@ export default function ImportarExtrato() {
       }
 
       await supabase.from('imports').update({ stats: counts }).eq('id', imp.id);
+      if (!bank.bank_ref) {
+        // remember which account receives CGD statements (masked number only)
+        await supabase.from('accounts').update({ bank_ref: loaded.accountLabel?.split(' · ')[0] ?? 'CGD' }).eq('id', bank.id);
+        qc.invalidateQueries({ queryKey: ['accounts'] });
+      }
 
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['transaction'] });
@@ -322,7 +327,7 @@ export default function ImportarExtrato() {
   const visibleLinks = showLinks ? linkRows : needsLook;
 
   return (
-    <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll}>
+    <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic">
       <View style={styles.inner}>
         <Card>
           <Text style={styles.h2}>Extrato CGD (CSV)</Text>

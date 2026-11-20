@@ -14,7 +14,8 @@ async function unwrap<T>(p: PromiseLike<{ data: T | null; error: { message: stri
 export function useCategories() {
   const q = useQuery({
     queryKey: ['categories'],
-    queryFn: () => unwrap<Category[]>(supabase.from('categories').select('*').eq('archived', false)),
+    // archived ones too: old movements keep showing their names; pickers hide them
+    queryFn: () => unwrap<Category[]>(supabase.from('categories').select('*')),
     staleTime: 5 * 60_000,
   });
   const index = useMemo(() => indexCategories(q.data ?? []), [q.data]);
@@ -44,7 +45,7 @@ export function useCreateCategory() {
 export function useAccounts() {
   return useQuery({
     queryKey: ['accounts'],
-    queryFn: () => unwrap<Account[]>(supabase.from('accounts').select('id, name, type').order('name')),
+    queryFn: () => unwrap<Account[]>(supabase.from('accounts').select('id, name, type, bank_ref').order('name')),
     staleTime: 5 * 60_000,
   });
 }

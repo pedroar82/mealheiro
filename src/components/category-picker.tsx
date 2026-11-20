@@ -24,7 +24,7 @@ export function CategoryPicker({
   const [adding, setAdding] = useState<string | null>(null); // root id whose "new subcategory" field is open
   const [newName, setNewName] = useState('');
   const create = useCreateCategory();
-  const roots = (index.children.get(null) ?? []).filter((c) => c.kind === kind);
+  const roots = (index.children.get(null) ?? []).filter((c) => c.kind === kind && !c.archived);
 
   const pick = (id: string | null) => {
     onChange(id);
@@ -58,7 +58,7 @@ export function CategoryPicker({
           </View>
           <ScrollView contentContainerStyle={{ padding: space.md, gap: space.sm }}>
             {roots.map((root) => {
-              const subs = index.children.get(root.id) ?? [];
+              const subs = (index.children.get(root.id) ?? []).filter((c) => !c.archived);
               const isOpen = expanded === root.id;
               return (
                 <View key={root.id} style={styles.group}>
@@ -75,7 +75,7 @@ export function CategoryPicker({
                     </Pressable>
                   </View>
                   {isOpen &&
-                    subs.flatMap((s) => [s, ...(index.children.get(s.id) ?? [])]).map((s) => (
+                    subs.flatMap((s) => [s, ...(index.children.get(s.id) ?? []).filter((c) => !c.archived)]).map((s) => (
                       <Pressable key={s.id} accessibilityRole="button" onPress={() => pick(s.id)} style={styles.subRow}>
                         <Text style={[styles.subText, value === s.id && styles.selected]}>{categoryPath(index, s.id).split(' › ').slice(1).join(' › ')}</Text>
                       </Pressable>

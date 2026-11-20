@@ -153,7 +153,7 @@ export default function ImportarExcel() {
   const missingAccount = ready && (!bank || !cash);
 
   return (
-    <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll}>
+    <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic">
       <View style={styles.inner}>
         <Card>
           <Text style={styles.h2}>Histórico do Excel</Text>

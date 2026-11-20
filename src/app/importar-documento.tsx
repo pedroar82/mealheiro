@@ -107,7 +107,7 @@ export default function ImportarDocumento() {
   };
 
   return (
-    <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll}>
+    <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic">
       <View style={styles.inner}>
         {(stage === 'pick' || stage === 'done') && (
           <Card>

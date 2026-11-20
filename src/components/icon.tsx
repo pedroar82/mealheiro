@@ -8,6 +8,7 @@ const icons = {
   add: { ios: 'plus.circle.fill', web: 'add_circle' },
   search: { ios: 'magnifyingglass', web: 'search' },
   chart: { ios: 'chart.pie', web: 'pie_chart' },
+  settings: { ios: 'gearshape', web: 'settings' },
 } as const satisfies Record<string, { ios: SFSymbol; web: AndroidSymbol }>;
 
 export type IconName = keyof typeof icons;
