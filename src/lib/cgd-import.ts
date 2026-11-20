@@ -207,9 +207,11 @@ export type ExistingTx = {
   account_id: string | null;
   description: string | null;
   source: string;
+  recurring?: boolean;
 };
 
-export type Candidate = { tx: ExistingTx; days: number; score: number };
+/** amountDiffers: a recurring movement (salary, bill) whose amount changed — linking updates it to the bank's amount. */
+export type Candidate = { tx: ExistingTx; days: number; score: number; amountDiffers?: boolean };
 
 export type RefundTarget = { tx: ExistingTx } | { lineIndex: number };
 
@@ -273,10 +275,17 @@ export function classify(
     const kind = l.debit ? 'expense' : 'income';
     const amount = (l.debit ?? l.credit)!;
     const candidates = usable
-      .filter((t) => t.kind === kind && t.amount_cents === amount && Math.abs(daysBetween(t.date, l.value)) <= 3)
+      .filter((t) => {
+        if (t.kind !== kind) return false;
+        const days = Math.abs(daysBetween(t.date, l.value));
+        if (t.amount_cents === amount) return days <= 3;
+        // recurring entries registered by hand may differ a little from what the bank shows
+        return !!t.recurring && days <= 5 && Math.abs(t.amount_cents - amount) <= 0.25 * Math.max(t.amount_cents, amount);
+      })
       .map((t) => {
         const days = Math.abs(daysBetween(t.date, l.value));
-        return { tx: t, days, score: days - 2 * similarity(l.description, t.description) };
+        const amountDiffers = t.amount_cents !== amount;
+        return { tx: t, days, score: days - 2 * similarity(l.description, t.description) + (amountDiffers ? 3 : 0), amountDiffers };
       })
       .sort((a, b) => a.score - b.score);
     if (candidates.length) return { type: 'link', candidates };

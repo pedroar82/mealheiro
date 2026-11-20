@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 
 import { BarChart, Donut, type Bar, type Slice } from '@/components/charts';
 import { MonthSwitcher, useMonth } from '@/components/month-switcher';
+import { RecurringCard } from '@/components/recurring-card';
 import { Screen } from '@/components/screen';
 import { TransactionRow } from '@/components/transaction-row';
 import { Card, Muted, Segmented } from '@/components/ui';
@@ -110,6 +111,8 @@ export default function Inicio() {
           </View>
         </View>
       </View>
+
+      <RecurringCard index={index} />
 
       <Card>
         <Segmented

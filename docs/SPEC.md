@@ -384,3 +384,8 @@ note when the period includes history without product detail.
   bank line) and by default **attached** to them instead of creating a new one; the existing date/amount/account stay.
   Already-saved receipt movements can be merged from the detail screen. Stores get `locality` (from the receipt, or the
   postal-code line of the address).
+- 20/11/2026 — Recurring applies to income **and** expenses ("Repete todos os meses"). From the usual day, Início
+  suggests registering it (amount editable) until something of the same kind + category arrives that month (same
+  description or amount within ±25%). "Este mês não" (this device) / "Já não se repete" (clears the flag on the series).
+  Series not seen for 2 months stop being suggested. CGD import links a recurring movement even with a different
+  amount (±25%, ±5 days, always shown for confirmation) and replaces its amount/date with the bank's.

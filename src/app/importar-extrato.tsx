@@ -56,7 +56,7 @@ async function loadContext(lines: BankLine[], bankId: string) {
     fetchAll<ExistingTx>((a, b) =>
       supabase
         .from('transactions')
-        .select('id, kind, date, amount_cents, account_id, description, source')
+        .select('id, kind, date, amount_cents, account_id, description, source, recurring')
         .in('kind', ['expense', 'income'])
         .gte('date', from)
         .lte('date', to)
@@ -244,6 +244,19 @@ export default function ImportarExtrato() {
       });
       await upsertTx(second);
 
+      // 3a. recurring movements linked with a different amount take the bank's amount and date
+      for (const [i, f] of finals.entries()) {
+        const p = plans[i];
+        if (f.status !== 'linked' || p.type !== 'link') continue;
+        const c = p.candidates.find((x) => x.tx.id === f.txId);
+        if (!c?.amountDiffers) continue;
+        const { error } = await supabase
+          .from('transactions')
+          .update({ amount_cents: (lines[i].debit ?? lines[i].credit)!, date: lines[i].value })
+          .eq('id', f.txId);
+        if (error) throw new Error(error.message);
+      }
+
       // 3. linked transactions without an account now belong to the bank account
       const linkedIds = finals.flatMap((f) => (f.status === 'linked' ? [f.txId] : []));
       for (const part of chunks(linkedIds, 100)) {
@@ -303,7 +316,9 @@ export default function ImportarExtrato() {
   const toImport = loaded ? loaded.lines.length - (counts.already ?? 0) : 0;
 
   const linkRows = loaded ? loaded.plans.map((p, i) => ({ p, i })).filter((x) => x.p.type === 'link') : [];
-  const needsLook = linkRows.filter(({ p, i }) => p.type === 'link' && (p.candidates.length > 1 || links[i] === 'new'));
+  const needsLook = linkRows.filter(
+    ({ p, i }) => p.type === 'link' && (p.candidates.length > 1 || links[i] === 'new' || p.candidates.some((c) => c.amountDiffers)),
+  );
   const visibleLinks = showLinks ? linkRows : needsLook;
 
   return (
@@ -359,7 +374,8 @@ export default function ImportarExtrato() {
               <Card>
                 <Text style={styles.h3}>Já registados ({linkRows.length})</Text>
                 <Muted>
-                  Linhas do banco com o mesmo valor e data próxima (±3 dias) de um movimento que já existe. São ligadas, não
+                  Linhas do banco com o mesmo valor e data próxima (±3 dias) de um movimento que já existe — ou, nos movimentos
+                  mensais (salário, contas), valor até 25% diferente; nesse caso fica o valor do banco. São ligadas, não
                   duplicadas. {needsLook.length ? `${needsLook.length} para confirmar.` : ''}
                 </Muted>
                 {visibleLinks.map(({ p, i }) => p.type === 'link' && (
@@ -369,7 +385,9 @@ export default function ImportarExtrato() {
                       {p.candidates.map((c) => (
                         <Chip
                           key={c.tx.id}
-                          label={`${c.tx.description ?? 'Sem descrição'} · ${formatDate(c.tx.date)}`}
+                          label={`${c.tx.description ?? 'Sem descrição'} · ${formatDate(c.tx.date)}${
+                            c.amountDiffers ? ` · ${formatEUR(c.tx.amount_cents)} → ${formatEUR((loaded.lines[i].debit ?? loaded.lines[i].credit)!)}` : ''
+                          }`}
                           selected={links[i] === c.tx.id}
                           onPress={() => setLinks((s) => ({ ...s, [i]: c.tx.id }))}
                         />

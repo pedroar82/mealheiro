@@ -126,12 +126,10 @@ export function TransactionForm({ initial, busy, submitLabel, onSubmit }: Props)
         </View>
       </View>
 
-      {kind === 'income' && (
-        <View style={styles.switchRow}>
-          <Text style={styles.switchLabel}>Receita mensal recorrente</Text>
-          <Switch value={recurring} onValueChange={setRecurring} accessibilityLabel="Receita mensal recorrente" />
-        </View>
-      )}
+      <View style={styles.switchRow}>
+        <Text style={styles.switchLabel}>Repete todos os meses</Text>
+        <Switch value={recurring} onValueChange={setRecurring} accessibilityLabel="Repete todos os meses" />
+      </View>
 
       <Button label={submitLabel} onPress={submit} busy={busy} />
     </View>

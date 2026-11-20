@@ -54,3 +54,5 @@ Last updated: 19/11/2026. Read with `docs/SPEC.md` (requirements, data model, de
 - 20/11/2026 Análise (uncommitted, awaiting test): receitas vs despesas (3/6/12 meses, tap a month), category of the
   month vs previous (subcategories + shops), top products of the month, unit-price history (per kg for weighed items,
   cheapest shop). Logic in `src/lib/analysis.ts`. Phase 5 left: recurring income suggestions.
+- 20/11/2026 Recurring income/expenses (uncommitted, awaiting test): `src/lib/recurring.ts`, Início card,
+  import linking with different amount. This completes phase 5. Next: phase 6 (later) items or Definições.
