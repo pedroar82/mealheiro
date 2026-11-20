@@ -1,6 +1,6 @@
 // Hand-written row types matching supabase/migrations (replace with generated types later).
 
-export type Kind = 'expense' | 'income' | 'transfer' | 'refund';
+export type Kind = 'expense' | 'income' | 'transfer' | 'refund' | 'settlement';
 export type CategoryKind = 'expense' | 'income';
 
 export type Category = {
@@ -30,6 +30,8 @@ export type Transaction = {
   source: 'manual' | 'receipt' | 'pdf' | 'excel' | 'bank_csv';
   recurring: boolean;
   needs_review: boolean;
+  share_pct: number | null; // user's share of a shared expense (null = 100%)
+  external_key?: string | null; // 'shared:…' = the user's half of a bill the flatmate paid
   created_at: string;
 };
 

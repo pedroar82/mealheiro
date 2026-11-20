@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -30,6 +30,7 @@ type Stage = 'camera' | 'reading' | 'review' | 'saving';
 
 export default function Digitalizar() {
   const qc = useQueryClient();
+  const { para } = useLocalSearchParams<{ para?: string }>(); // attach to this movement (from "Compras sem talão")
   const { session } = useSession();
   const { index } = useCategories();
   const [permission, requestPermission] = useCameraPermissions();
@@ -106,7 +107,7 @@ export default function Digitalizar() {
       <SafeAreaView edges={['top']} style={styles.page}>
         <ScrollView contentContainerStyle={styles.scroll}>
           <Text accessibilityRole="header" style={styles.title}>Rever talão</Text>
-          <ReceiptReview key={draft.documentId} initial={draft} index={index} busy={stage === 'saving'} error={error} onSave={save} onDiscard={discard} />
+          <ReceiptReview key={draft.documentId} targetId={para} initial={draft} index={index} busy={stage === 'saving'} error={error} onSave={save} onDiscard={discard} />
         </ScrollView>
       </SafeAreaView>
     );

@@ -349,6 +349,9 @@ export default function ImportarExtrato() {
               {done.refund ?? 0} reembolsos{done.ignored ? ` · ${done.ignored} ignorados` : ''}{done.already ? ` · ${done.already} já importados` : ''}.
             </Text>
             <Button label="Ver movimentos" variant="secondary" onPress={() => router.navigate('/movimentos')} />
+            {(done.created ?? 0) > 0 && (
+              <Button label="Compras sem talão (opcional)" variant="secondary" onPress={() => router.push('/sem-talao')} />
+            )}
           </Card>
         )}
 

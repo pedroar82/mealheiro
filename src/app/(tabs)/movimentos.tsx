@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-nati
 
 import { MonthSwitcher, useMonth } from '@/components/month-switcher';
 import { Screen } from '@/components/screen';
+import { myCost } from '@/lib/shared';
 import { TransactionRow } from '@/components/transaction-row';
 import { Card, Chip, Muted } from '@/components/ui';
 import { colors, radius, space } from '@/constants/theme';
@@ -26,7 +27,7 @@ export default function Movimentos() {
     const list = (tx.data ?? []).filter((t) => {
       if (filter === 'expense' && t.kind !== 'expense') return false;
       if (filter === 'income' && t.kind !== 'income') return false;
-      if (filter === 'review' && !(t.needs_review || (!t.category_id && t.kind !== 'transfer' && t.kind !== 'refund'))) return false;
+      if (filter === 'review' && !(t.needs_review || (!t.category_id && t.kind !== 'transfer' && t.kind !== 'refund' && t.kind !== 'settlement'))) return false;
       if (!q) return true;
       return [t.description, categoryPath(index, t.category_id)].some((s) => s?.toLowerCase().includes(q));
     });
@@ -38,7 +39,7 @@ export default function Movimentos() {
     return [...byDay.entries()].map(([date, items]) => ({
       date,
       items,
-      spent: items.reduce((s, t) => s + (t.kind === 'expense' ? t.amount_cents : t.kind === 'refund' ? -t.amount_cents : 0), 0),
+      spent: items.reduce((s, t) => s + (t.kind === 'expense' ? myCost(t) : t.kind === 'refund' ? -t.amount_cents : 0), 0),
     }));
   }, [tx.data, query, filter, index]);
 
@@ -68,7 +69,7 @@ export default function Movimentos() {
         <Card key={g.date} style={styles.group}>
           <View style={styles.dayHeader}>
             <Text style={styles.day}>{formatDayShort(g.date)}</Text>
-            {g.spent > 0 && <Text style={styles.daySpent}>{formatEUR(-g.spent)}</Text>}
+            {g.spent > 0 && <Text style={styles.daySpent}>{formatEUR(g.spent)}</Text>}
           </View>
           {g.items.map((t, i) => (
             <View key={t.id} style={i > 0 && styles.divider}>

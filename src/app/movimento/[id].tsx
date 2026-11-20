@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { SharedCard } from '@/components/shared-card';
 import { TransactionForm } from '@/components/transaction-form';
 import { Button, Card, Muted } from '@/components/ui';
 import { colors, maxContentWidth, space } from '@/constants/theme';
@@ -81,6 +82,8 @@ export default function EditMovimento() {
             {mergeError && <Text style={styles.error}>{mergeError}</Text>}
           </Card>
         )}
+        <SharedCard tx={tx.data} />
+
         {(save.error || del.error) && <Text style={styles.error}>{(save.error ?? del.error)!.message}</Text>}
 
         {editable ? (
@@ -93,7 +96,7 @@ export default function EditMovimento() {
             />
           </Card>
         ) : (
-          <Muted>Transferências e reembolsos são criados pelas importações e não se editam aqui.</Muted>
+          tx.data.kind !== 'settlement' && <Muted>Transferências e reembolsos são criados pelas importações e não se editam aqui.</Muted>
         )}
 
         {(lines.data?.length ?? 0) > 0 && (

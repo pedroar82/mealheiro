@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
 import { File as DeviceFile } from 'expo-file-system';
@@ -41,6 +41,7 @@ type Stage = 'pick' | 'uploading' | 'reading' | 'review' | 'saving' | 'done';
 
 export default function ImportarDocumento() {
   const qc = useQueryClient();
+  const { para } = useLocalSearchParams<{ para?: string }>(); // attach to this movement (from "Compras sem talão")
   const { session } = useSession();
   const { index } = useCategories();
   const [stage, setStage] = useState<Stage>('pick');
@@ -140,7 +141,7 @@ export default function ImportarDocumento() {
         {error && stage === 'pick' && <Text style={styles.error}>{error}</Text>}
 
         {draft && (stage === 'review' || stage === 'saving') && (
-          <ReceiptReview key={draft.documentId} initial={draft} index={index} busy={stage === 'saving'} error={error} onSave={save} onDiscard={discard} />
+          <ReceiptReview key={draft.documentId} targetId={para} initial={draft} index={index} busy={stage === 'saving'} error={error} onSave={save} onDiscard={discard} />
         )}
       </View>
     </ScrollView>

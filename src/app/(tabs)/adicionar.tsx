@@ -65,6 +65,9 @@ export default function Adicionar() {
         />
       </Card>
 
+      <Link href="/sem-talao" style={styles.importLink}>
+        Compras no banco sem talão ›
+      </Link>
       {Platform.OS === 'web' && (
         <View>
           <Link href="/importar-extrato" style={styles.importLink}>
@@ -72,6 +75,9 @@ export default function Adicionar() {
           </Link>
           <Link href="/importar-excel" style={styles.importLink}>
             Importar histórico do Excel ›
+          </Link>
+          <Link href="/importar-partilhadas" style={styles.importLink}>
+            Importar contas da casa (partilhadas) ›
           </Link>
         </View>
       )}

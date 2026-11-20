@@ -29,6 +29,8 @@ function RootNavigator() {
         <Stack.Screen name="importar-documento" options={{ headerShown: true, title: 'Talão ou fatura', headerBackTitle: 'Voltar' }} />
         <Stack.Screen name="importar-extrato" options={{ headerShown: true, title: 'Importar extrato', headerBackTitle: 'Voltar' }} />
         <Stack.Screen name="definicoes" options={{ headerShown: true, title: 'Definições', headerBackTitle: 'Voltar' }} />
+        <Stack.Screen name="sem-talao" options={{ headerShown: true, title: 'Compras sem talão', headerBackTitle: 'Voltar' }} />
+        <Stack.Screen name="importar-partilhadas" options={{ headerShown: true, title: 'Contas da casa', headerBackTitle: 'Voltar' }} />
       </Stack.Protected>
       <Stack.Protected guard={!session}>
         <Stack.Screen name="sign-in" />

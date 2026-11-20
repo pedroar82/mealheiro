@@ -404,7 +404,15 @@ export async function loadLineRules(): Promise<LineRule[]> {
   return (data ?? []) as LineRule[];
 }
 
-export type Match = { id: string; date: string; description: string | null; source: string; days: number };
+export type Match = { id: string; date: string; description: string | null; source: string; days: number; amount_cents?: number };
+
+/** A specific movement chosen beforehand (e.g. from "Compras sem talão"); null if it already has a document. */
+export async function loadTarget(id: string, date: string): Promise<Match | null> {
+  const { data } = await supabase.from('transactions').select('id, date, description, source, amount_cents, document_id').eq('id', id).maybeSingle();
+  if (!data || data.document_id) return null;
+  const day = (iso: string) => Date.parse(iso) / 86_400_000;
+  return { id: data.id, date: data.date, description: data.description, source: data.source, amount_cents: data.amount_cents, days: Math.abs(Math.round(day(data.date) - day(date))) };
+}
 
 /** Existing expenses that may be this same purchase: same amount, ±3 days, no receipt attached yet. */
 export async function findMatches(date: string, totalCents: number, excludeId?: string): Promise<Match[]> {

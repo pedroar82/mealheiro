@@ -59,3 +59,10 @@ Last updated: 19/11/2026. Read with `docs/SPEC.md` (requirements, data model, de
 - 20/11/2026 Definições (uncommitted, awaiting test): gear on Início → categorias (add main/sub, rename, archive/restore;
   archived stay in the index so old movements keep names, pickers hide them), regras (by scope, search, recategorise,
   delete), contas (rename, add; CGD import account pinned via `bank_ref` so renames are safe), importações (history).
+- 20/11/2026 Compras sem talão (uncommitted, awaiting test + migration `20261121000000_no_receipt.sql`): `src/app/sem-talao.tsx`,
+  links from Adicionar and the CGD import result; review screen accepts `para=<transaction id>` as merge target.
+- 20/11/2026 Shared flat bills + Compras sem talão committed (tested by the user). `src/lib/shared-import.ts`
+  (parser/planner: exact payments aligned per bill kind; otherwise a movement with the bill's name/category, never by
+  amount alone; fuel/food excluded; same-name repetitions offered for deletion; stray 50% expenses offered for un-sharing),
+  `src/app/importar-partilhadas.tsx`, `src/components/shared-card.tsx`, `src/lib/shared.ts`; no minus sign on expenses.
+  Next: phase 6 items (offline cache, email inbox, e-Fatura, export/backup) or other banks (open question 3).

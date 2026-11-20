@@ -6,7 +6,7 @@ import { Button, Card, Chip, FieldLabel, Muted } from '@/components/ui';
 import { colors, radius, space } from '@/constants/theme';
 import type { CategoryIndex } from '@/lib/categories';
 import { centsToInput, formatDate, formatEUR, parseAmount, parseDate } from '@/lib/format';
-import { findDuplicate, findMatches, type Draft, type DraftLine, type Match } from '@/lib/receipt';
+import { findDuplicate, findMatches, loadTarget, type Draft, type DraftLine, type Match } from '@/lib/receipt';
 
 /** Review an extracted receipt/invoice before saving. Shared by the web upload and the iPhone scanner. */
 export function ReceiptReview({
@@ -16,7 +16,9 @@ export function ReceiptReview({
   error,
   onSave,
   onDiscard,
+  targetId,
 }: {
+  targetId?: string | null; // movement the receipt should be attached to (always offered, preselected)
   initial: Draft;
   index: CategoryIndex;
   busy: boolean;
@@ -46,15 +48,16 @@ export function ReceiptReview({
   useEffect(() => {
     if (!date || total == null) return;
     let alive = true;
-    findMatches(date, total).then((m) => {
+    Promise.all([findMatches(date, total), targetId ? loadTarget(targetId, date) : null]).then(([m, target]) => {
       if (!alive) return;
-      setMatches(m);
-      setMergeInto(m[0]?.id ?? null); // default: the closest one
+      const list = target ? [target, ...m.filter((x) => x.id !== target.id)] : m;
+      setMatches(list);
+      setMergeInto(list[0]?.id ?? null); // default: the chosen movement, else the closest one
     });
     return () => {
       alive = false;
     };
-  }, [date, total]);
+  }, [date, total, targetId]);
   const sum = d.lines.reduce((s, l) => s + l.total_cents, 0);
   const mismatch = total != null && d.lines.length > 0 && sum !== total;
   const uncategorised = d.lines.filter((l) => !l.category_id && l.total_cents > 0).length; // discounts follow the main category
@@ -131,7 +134,9 @@ export function ReceiptReview({
             {matches.map((m) => (
               <Chip
                 key={m.id}
-                label={`Juntar a: ${m.description ?? 'Despesa'} · ${formatDate(m.date)} · ${SOURCE[m.source] ?? m.source}`}
+                label={`Juntar a: ${m.description ?? 'Despesa'} · ${formatDate(m.date)} · ${SOURCE[m.source] ?? m.source}${
+                  m.amount_cents != null && m.amount_cents !== total ? ` · ${formatEUR(m.amount_cents)}` : ''
+                }`}
                 selected={mergeInto === m.id}
                 onPress={() => setMergeInto(m.id)}
               />

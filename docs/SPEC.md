@@ -389,3 +389,17 @@ note when the period includes history without product detail.
   description or amount within ±25%). "Este mês não" (this device) / "Já não se repete" (clears the flag on the series).
   Series not seen for 2 months stop being suggested. CGD import links a recurring movement even with a different
   amount (±25%, ±5 days, always shown for confirmation) and replaces its amount/date with the bank's.
+- 20/11/2026 — "Compras sem talão": bank_csv expenses of the last 3 months with no document and `no_receipt = false`,
+  minimum amount chosen in the list (default 10 €). Attaching opens camera/upload with the movement preselected as the
+  merge target (receipt products/shop go onto the bank movement; its amount/date stay). "Não tem talão" sets
+  `no_receipt` (migration `20261121000000_no_receipt.sql`).
+- 20/11/2026 — Shared flat bills (rent, water, gas, electricity, internet) are split 50/50 with a flatmate.
+  `transactions.share_pct` = the user's share of an expense they paid; spending (`spend_facts`) counts only that share.
+  Bills the flatmate paid get a "your half" expense (`external_key shared:<YYYY-MM>:<bill>`); the monthly balancing
+  transfer becomes kind `settlement` ("acerto da casa": neither income nor spending). Source of truth: the flat's
+  spreadsheet, imported on the web (re-uploadable). Movement detail has a 50% switch and an "acerto da casa" toggle.
+  Movimentos shows expenses without a minus sign; shared ones show the user's part with 👥.
+  Migration `20261121010000_shared_expenses.sql`.
+  Matching: exact amount, aligned in order per bill kind (rent is paid at the end of the previous month); otherwise only
+  a movement whose description/category names the bill (renda, internet/MEO/NOS, eletricidade/EDP, água, gás) — the user
+  says whether it is the whole bill (→ 50%), already their half, or unrelated. A similar amount alone is never a match.
