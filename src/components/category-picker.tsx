@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, space } from '@/constants/theme';
 import { categoryPath, type CategoryIndex } from '@/lib/categories';
+import { useCreateCategory } from '@/lib/queries';
 import type { CategoryKind } from '@/lib/types';
 
 /** Field that opens a sheet with the category tree; any level can be chosen. */
@@ -20,12 +21,19 @@ export function CategoryPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [adding, setAdding] = useState<string | null>(null); // root id whose "new subcategory" field is open
+  const [newName, setNewName] = useState('');
+  const create = useCreateCategory();
   const roots = (index.children.get(null) ?? []).filter((c) => c.kind === kind);
 
   const pick = (id: string | null) => {
     onChange(id);
     setOpen(false);
+    setAdding(null);
   };
+
+  const add = (parentId: string) =>
+    create.mutate({ name: newName, parent_id: parentId, kind }, { onSuccess: (c) => (setNewName(''), pick(c.id)) });
 
   return (
     <>
@@ -58,15 +66,13 @@ export function CategoryPicker({
                     <Pressable accessibilityRole="button" onPress={() => pick(root.id)} style={styles.rowMain}>
                       <Text style={[styles.rowText, value === root.id && styles.selected]}>{root.name}</Text>
                     </Pressable>
-                    {subs.length > 0 && (
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`${isOpen ? 'Fechar' : 'Ver'} subcategorias de ${root.name}`}
-                        onPress={() => setExpanded(isOpen ? null : root.id)}
-                        style={styles.expand}>
-                        <Text style={styles.expandText}>{isOpen ? '−' : `${subs.length} +`}</Text>
-                      </Pressable>
-                    )}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`${isOpen ? 'Fechar' : 'Ver'} subcategorias de ${root.name}`}
+                      onPress={() => setExpanded(isOpen ? null : root.id)}
+                      style={styles.expand}>
+                      <Text style={styles.expandText}>{isOpen ? '−' : subs.length ? `${subs.length} +` : '+'}</Text>
+                    </Pressable>
                   </View>
                   {isOpen &&
                     subs.flatMap((s) => [s, ...(index.children.get(s.id) ?? [])]).map((s) => (
@@ -74,6 +80,32 @@ export function CategoryPicker({
                         <Text style={[styles.subText, value === s.id && styles.selected]}>{categoryPath(index, s.id).split(' › ').slice(1).join(' › ')}</Text>
                       </Pressable>
                     ))}
+                  {isOpen &&
+                    (adding === root.id ? (
+                      <View style={styles.addRow}>
+                        <TextInput
+                          style={styles.addInput}
+                          value={newName}
+                          onChangeText={setNewName}
+                          placeholder={`Nova subcategoria de ${root.name}`}
+                          autoFocus
+                          returnKeyType="done"
+                          onSubmitEditing={() => add(root.id)}
+                          accessibilityLabel={`Nome da nova subcategoria de ${root.name}`}
+                        />
+                        <Pressable accessibilityRole="button" disabled={create.isPending} onPress={() => add(root.id)} style={styles.addBtn}>
+                          {create.isPending ? <ActivityIndicator color="#fff" /> : <Text style={styles.addBtnText}>Criar</Text>}
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => (setAdding(root.id), setNewName(''), create.reset())}
+                        style={styles.subRow}>
+                        <Text style={styles.addText}>+ Nova subcategoria</Text>
+                      </Pressable>
+                    ))}
+                  {isOpen && adding === root.id && create.error && <Text style={styles.error}>{create.error.message}</Text>}
                 </View>
               );
             })}
@@ -105,6 +137,12 @@ const styles = StyleSheet.create({
   subRow: { minHeight: 46, justifyContent: 'center', paddingHorizontal: space.lg, borderTopWidth: 1, borderTopColor: '#EEF0F3' },
   subText: { fontSize: 15, color: colors.ink },
   selected: { color: colors.accent },
+  addRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.sm, paddingLeft: space.lg, borderTopWidth: 1, borderTopColor: '#EEF0F3' },
+  addInput: { flex: 1, minHeight: 44, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, paddingHorizontal: 12, fontSize: 15, color: colors.ink },
+  addBtn: { minHeight: 44, minWidth: 72, borderRadius: radius.sm, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.md },
+  addBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  addText: { fontSize: 15, color: colors.accent, fontWeight: '600' },
+  error: { color: colors.danger, fontSize: 14, paddingHorizontal: space.lg, paddingBottom: space.sm },
   none: { minHeight: 48, justifyContent: 'center', paddingHorizontal: space.md },
   noneText: { fontSize: 15, color: colors.warning, fontWeight: '600' },
 });

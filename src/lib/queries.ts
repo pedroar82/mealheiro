@@ -21,6 +21,26 @@ export function useCategories() {
   return { ...q, index };
 }
 
+/** New (sub)category; if one with the same name already exists under that parent, it is returned instead. */
+export function useCreateCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (c: { name: string; parent_id: string | null; kind: Category['kind'] }): Promise<Category> => {
+      const name = c.name.trim().replace(/\s+/g, ' ');
+      if (!name) throw new Error('Escreva um nome.');
+      const { data, error } = await supabase.from('categories').insert({ ...c, name }).select('*').single();
+      if (!error) return data as Category;
+      if (error.code !== '23505') throw new Error(error.message);
+      const q = supabase.from('categories').select('*').eq('kind', c.kind).ilike('name', name);
+      const found = await unwrap<Category[]>(c.parent_id ? q.eq('parent_id', c.parent_id) : q.is('parent_id', null));
+      if (!found[0]) throw new Error(error.message);
+      if (found[0].archived) await supabase.from('categories').update({ archived: false }).eq('id', found[0].id);
+      return found[0];
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
+  });
+}
+
 export function useAccounts() {
   return useQuery({
     queryKey: ['accounts'],
