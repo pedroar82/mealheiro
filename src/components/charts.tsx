@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
-import Svg, { Circle, Line, Path } from 'react-native-svg';
+import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
 
 import { chartColors, colors, space } from '@/constants/theme';
-import { formatEUR } from '@/lib/format';
+import { formatDate, formatEUR } from '@/lib/format';
 
 // ---------------------------------------------------------------------------
 // Bar chart: one series, rounded data-ends on the baseline, tap a bar to read it.
@@ -131,11 +131,137 @@ export function Donut({ slices, size = 150, centerLabel }: { slices: Slice[]; si
   );
 }
 
+// ---------------------------------------------------------------------------
+// Paired bars (income vs expense per month). Tapping a month selects it (parent decides what that means).
+// ---------------------------------------------------------------------------
+export type Pair = { key: string; label: string; a: number; b: number };
+
+const roundedTop = (x: number, w: number, h: number, base: number) => {
+  if (h <= 0) return '';
+  const r = Math.min(3, w / 2, h);
+  return `M${x},${base} V${base - h + r} Q${x},${base - h} ${x + r},${base - h} H${x + w - r} Q${x + w},${base - h} ${x + w},${base - h + r} V${base} Z`;
+};
+
+export function PairedBars({
+  pairs,
+  selected,
+  onSelect,
+  height = 150,
+  labels,
+  label,
+}: {
+  pairs: Pair[];
+  selected: string;
+  onSelect: (key: string) => void;
+  height?: number;
+  labels: [string, string];
+  label: string;
+}) {
+  const [width, setWidth] = useState(0);
+  const max = Math.max(1, ...pairs.flatMap((p) => [p.a, p.b]));
+  const slot = pairs.length ? width / pairs.length : 0;
+  const barW = Math.max(4, Math.min(16, slot * 0.3));
+  const base = height - 2;
+  const h = (v: number) => (v > 0 ? Math.max(2, (v / max) * (base - 6)) : 0);
+  return (
+    <View style={{ gap: space.sm }}>
+      <View
+        onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+        style={{ height }}
+        accessibilityRole="image"
+        accessibilityLabel={`${label}. ${pairs.map((p) => `${p.label}: ${labels[0]} ${formatEUR(p.a)}, ${labels[1]} ${formatEUR(p.b)}`).join('; ')}`}>
+        {width > 0 && (
+          <Svg width={width} height={height}>
+            <Line x1={0} x2={width} y1={base} y2={base} stroke={chartColors.grid} strokeWidth={1} />
+            {pairs.map((p, i) => {
+              const cx = i * slot + slot / 2;
+              const dim = p.key !== selected ? 0.45 : 1;
+              return [
+                <Path key={`${p.key}a`} d={roundedTop(cx - barW - 1, barW, h(p.a), base)} fill={chartColors.income} fillOpacity={dim} />,
+                <Path key={`${p.key}b`} d={roundedTop(cx + 1, barW, h(p.b), base)} fill={chartColors.expense} fillOpacity={dim} />,
+              ];
+            })}
+          </Svg>
+        )}
+        {width > 0 && (
+          <View style={[StyleSheet.absoluteFill, styles.hitRow]}>
+            {pairs.map((p) => (
+              <Pressable key={p.key} style={{ width: slot, height }} onPress={() => onSelect(p.key)} accessibilityRole="button" accessibilityLabel={`Ver ${p.label}`} />
+            ))}
+          </View>
+        )}
+      </View>
+      <View style={styles.axis}>
+        {pairs.map((p) => (
+          <Text key={p.key} style={[styles.tick, { width: slot }, p.key === selected && styles.tickSel]} numberOfLines={1}>
+            {p.label}
+          </Text>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Price line: one point per purchase, first and last price labelled.
+// ---------------------------------------------------------------------------
+export function PriceLine({ points, height = 100, label }: { points: { date: string; cents: number }[]; height?: number; label: string }) {
+  const [width, setWidth] = useState(0);
+  const vals = points.map((p) => p.cents);
+  const lo = Math.min(...vals);
+  const hi = Math.max(...vals);
+  const pad = 14;
+  const top = 18;
+  const base = height - 6;
+  const x = (i: number) => (points.length === 1 ? width / 2 : pad + (i / (points.length - 1)) * (width - 2 * pad));
+  const y = (v: number) => (hi === lo ? (top + base) / 2 : base - ((v - lo) / (hi - lo)) * (base - top));
+  const last = points.length - 1;
+  return (
+    <View
+      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+      style={{ height }}
+      accessibilityRole="image"
+      accessibilityLabel={`${label}: ${points.map((p) => `${formatDate(p.date)} ${formatEUR(p.cents)}`).join(', ')}`}>
+      {width > 0 && points.length > 0 && (
+        <View aria-hidden>
+          <Svg width={width} height={height}>
+            <Line x1={0} x2={width} y1={base} y2={base} stroke={chartColors.grid} strokeWidth={1} />
+            <Polyline
+              points={points.map((p, i) => `${x(i)},${y(p.cents)}`).join(' ')}
+              fill="none"
+              stroke={chartColors.bar}
+              strokeWidth={2.5}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            {points.map((p, i) => (
+              <Circle key={i} cx={x(i)} cy={y(p.cents)} r={i === last ? 4.5 : 3} fill={chartColors.bar} />
+            ))}
+          </Svg>
+        </View>
+      )}
+      {width > 0 && points.length > 0 && (
+        <>
+          <Text style={[styles.priceTag, { left: Math.max(0, x(0) - 4), top: Math.max(0, y(points[0].cents) - 18) }]}>{formatEUR(points[0].cents)}</Text>
+          {last > 0 && (
+            <Text style={[styles.priceTag, styles.priceTagLast, { right: Math.max(0, width - x(last) - 4), top: Math.max(0, y(points[last].cents) - 20) }]}>
+              {formatEUR(points[last].cents)}
+            </Text>
+          )}
+        </>
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   readout: { fontSize: 13, color: colors.muted },
   axis: { flexDirection: 'row' },
   hitRow: { flexDirection: 'row' },
   tick: { fontSize: 11, color: colors.muted, textAlign: 'center' },
+  tickSel: { color: colors.ink, fontWeight: '700' },
+  priceTag: { position: 'absolute', fontSize: 11, color: colors.muted },
+  priceTagLast: { color: colors.ink, fontWeight: '600' },
   donutRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.md },
   center: { alignItems: 'center', justifyContent: 'center' },
   centerSmall: { fontSize: 11, color: colors.muted },

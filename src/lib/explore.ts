@@ -11,7 +11,19 @@ export type Fact = { date: string; amount_cents: number; category_id: string | n
 export type TxInfo = { id: string; description: string | null };
 export type Store = { id: string; name: string; locality: string | null; merchant_id: string };
 export type Merchant = { id: string; name: string };
-export type Line = { transaction_id: string; name: string; raw_text: string; total_cents: number; category_id: string | null; date: string };
+export type Line = {
+  transaction_id: string;
+  name: string;
+  raw_text: string;
+  total_cents: number;
+  category_id: string | null;
+  quantity: number | null;
+  unit: string | null;
+  unit_price_cents: number | null;
+  date: string;
+  store_id: string | null;
+};
+type LineRow = Omit<Line, 'date' | 'store_id'> & { transactions: { date: string; store_id: string | null } | { date: string; store_id: string | null }[] };
 
 export type ExploreData = { facts: Fact[]; tx: Map<string, TxInfo>; stores: Map<string, Store>; merchants: Map<string, Merchant>; lines: Line[] };
 
@@ -44,10 +56,10 @@ export async function loadExploreData(from: string, to: string): Promise<Explore
     ),
     fetchAll<Store>((a, b) => supabase.from('stores').select('id, name, locality, merchant_id').order('id').range(a, b)),
     fetchAll<Merchant>((a, b) => supabase.from('merchants').select('id, name').order('id').range(a, b)),
-    fetchAll<{ transaction_id: string; name: string; raw_text: string; total_cents: number; category_id: string | null; transactions: { date: string } | { date: string }[] }>((a, b) =>
+    fetchAll<LineRow>((a, b) =>
       supabase
         .from('line_items')
-        .select('transaction_id, name, raw_text, total_cents, category_id, transactions!inner(date)')
+        .select('transaction_id, name, raw_text, total_cents, category_id, quantity, unit, unit_price_cents, transactions!inner(date, store_id)')
         .gte('transactions.date', from)
         .lte('transactions.date', to)
         .order('id')
@@ -60,7 +72,10 @@ export async function loadExploreData(from: string, to: string): Promise<Explore
     stores: new Map(stores.map((s) => [s.id, s])),
     merchants: new Map(merchants.map((m) => [m.id, m])),
     // many-to-one embed: an object at runtime (typed as possibly an array by the untyped client)
-    lines: lines.map(({ transactions, ...l }) => ({ ...l, date: (Array.isArray(transactions) ? transactions[0] : transactions).date })),
+    lines: lines.map(({ transactions, ...l }) => {
+      const t = Array.isArray(transactions) ? transactions[0] : transactions;
+      return { ...l, date: t.date, store_id: t.store_id };
+    }),
   };
 }
 
@@ -72,7 +87,7 @@ export function subtree(idx: CategoryIndex, id: string): Set<string> {
   return out;
 }
 
-const has = (hay: string | null | undefined, q: string) => !!hay && normDesc(hay).includes(q);
+export const has = (hay: string | null | undefined, q: string) => !!hay && normDesc(hay).includes(q);
 
 /** Text describing where a purchase was made, used for shop/place matching (store, merchant, description). */
 function shopTexts(d: ExploreData, f: { store_id: string | null; merchant_id: string | null; transaction_id: string }) {

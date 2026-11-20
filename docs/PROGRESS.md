@@ -51,3 +51,6 @@ Last updated: 19/11/2026. Read with `docs/SPEC.md` (requirements, data model, de
   desde sempre, personalizado). Total, média mensal, nº compras, % do total, gráfico (dias/meses/anos), breakdown by
   subcategoria/loja/produto. Shop/place also match the movement description (Excel history has no store) — flagged.
   Logic in `src/lib/explore.ts` (pure, tested on synthetic data). Next: Análise, product price history.
+- 20/11/2026 Análise (uncommitted, awaiting test): receitas vs despesas (3/6/12 meses, tap a month), category of the
+  month vs previous (subcategories + shops), top products of the month, unit-price history (per kg for weighed items,
+  cheapest shop). Logic in `src/lib/analysis.ts`. Phase 5 left: recurring income suggestions.
