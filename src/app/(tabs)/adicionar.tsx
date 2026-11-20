@@ -30,20 +30,13 @@ export default function Adicionar() {
           <Text style={styles.sourceText}>{web ? 'Foto' : 'Digitalizar'}</Text>
           <Text style={styles.soon}>{web ? 'talão' : 'câmara'}</Text>
         </Pressable>
-        {web ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => router.push('/importar-documento')}
-            style={({ pressed }) => [styles.source, styles.sourceLive, pressed && { opacity: 0.7 }]}>
-            <Text style={styles.sourceText}>PDF</Text>
-            <Text style={styles.soon}>fatura</Text>
-          </Pressable>
-        ) : (
-          <View style={styles.source} accessibilityState={{ disabled: true }}>
-            <Text style={styles.sourceText}>PDF</Text>
-            <Text style={styles.soon}>em breve</Text>
-          </View>
-        )}
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push('/importar-documento')}
+          style={({ pressed }) => [styles.source, styles.sourceLive, pressed && { opacity: 0.7 }]}>
+          <Text style={styles.sourceText}>PDF</Text>
+          <Text style={styles.soon}>fatura</Text>
+        </Pressable>
       </View>
 
       {saved && (

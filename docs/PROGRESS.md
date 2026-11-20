@@ -44,3 +44,10 @@ Last updated: 19/11/2026. Read with `docs/SPEC.md` (requirements, data model, de
 - UI copy pt-PT. Never commit `*.xlsx`, `*.csv`, `data/`, `.env` (git-ignored).
 - Use `npx expo install` for deps; check Expo SDK 58 docs (Context7 `/expo/expo/expo_58.0.22`) before Expo APIs.
 - iPhone build not done yet: needs `eas login/init/device:create`, change bundle id `com.mealheiro.app` first.
+
+## 20/11/2026 — in progress (uncommitted, awaiting test)
+- iPhone PDF: Adicionar › PDF opens the Files picker (expo-document-picker + expo-file-system), same review/save flow.
+- Explorar (phase 5): target = categoria (subtree) / loja / local / produto × período (este mês, 3 meses, este ano,
+  desde sempre, personalizado). Total, média mensal, nº compras, % do total, gráfico (dias/meses/anos), breakdown by
+  subcategoria/loja/produto. Shop/place also match the movement description (Excel history has no store) — flagged.
+  Logic in `src/lib/explore.ts` (pure, tested on synthetic data). Next: Análise, product price history.

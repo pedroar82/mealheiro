@@ -1,6 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
+import * as DocumentPicker from 'expo-document-picker';
+import { File as DeviceFile } from 'expo-file-system';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ReceiptReview } from '@/components/receipt-review';
@@ -33,6 +35,8 @@ async function prepare(file: File): Promise<{ blob: Blob; ext: string; kind: Dra
   return { blob, ext: 'jpg', kind: 'receipt' };
 }
 
+const web = Platform.OS === 'web';
+
 type Stage = 'pick' | 'uploading' | 'reading' | 'review' | 'saving' | 'done';
 
 export default function ImportarDocumento() {
@@ -45,25 +49,31 @@ export default function ImportarDocumento() {
   const [error, setError] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
 
-  if (Platform.OS !== 'web') {
-    return (
-      <View style={styles.center}>
-        <Muted>No iPhone, use Adicionar › Digitalizar.</Muted>
-      </View>
-    );
-  }
-
   const choose = async () => {
     const uid = session?.user.id;
     if (!uid) return;
     setError(null);
-    const file = await pickFile('image/*,application/pdf');
-    if (!file) return;
     try {
-      setStage('uploading');
-      const { blob, ext, kind } = await prepare(file);
-      setStage('reading');
-      const up = await uploadAndExtract({ userId: uid, body: blob, ext: ext as 'jpg' | 'pdf', kind });
+      let up;
+      let kind: Draft['kind'];
+      if (web) {
+        const file = await pickFile('image/*,application/pdf');
+        if (!file) return;
+        setStage('uploading');
+        const prepared = await prepare(file);
+        kind = prepared.kind;
+        setStage('reading');
+        up = await uploadAndExtract({ userId: uid, body: prepared.blob, ext: prepared.ext as 'jpg' | 'pdf', kind });
+      } else {
+        // iPhone: PDF from Files (e.g. an attachment saved from Mail); photos go through Digitalizar
+        const picked = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', copyToCacheDirectory: true });
+        if (picked.canceled) return;
+        setStage('uploading');
+        const bytes = await new DeviceFile(picked.assets[0].uri).bytes();
+        kind = 'pdf_invoice';
+        setStage('reading');
+        up = await uploadAndExtract({ userId: uid, body: bytes, ext: 'pdf', kind });
+      }
       setStoragePath(up.storagePath);
       setDraft(buildDraft(up.documentId, kind, up.extraction, index, await loadLineRules()));
       setStage('review');
@@ -103,8 +113,9 @@ export default function ImportarDocumento() {
           <Card>
             <Text style={styles.h2}>Talão ou fatura</Text>
             <Muted>
-              Foto de um talão (JPG/PNG) ou fatura em PDF. Os dados são lidos automaticamente; o ficheiro é apagado depois de
-              guardar.
+              {web
+                ? 'Foto de um talão (JPG/PNG) ou fatura em PDF. Os dados são lidos automaticamente; o ficheiro é apagado depois de guardar.'
+                : 'Fatura em PDF guardada em Ficheiros (no Mail: tocar no anexo › Partilhar › Guardar em Ficheiros). O ficheiro é apagado depois de guardar.'}
             </Muted>
             <Button label={stage === 'done' ? 'Importar outro' : 'Escolher ficheiro'} onPress={choose} />
           </Card>
@@ -139,7 +150,6 @@ export default function ImportarDocumento() {
 const styles = StyleSheet.create({
   scroll: { padding: space.md, paddingBottom: space.xl },
   inner: { width: '100%', maxWidth: 760, alignSelf: 'center', gap: space.md },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.lg, backgroundColor: colors.ground },
   h2: { fontSize: 17, fontWeight: '700', color: colors.ink },
   error: { color: colors.danger, fontSize: 14 },
   ok: { backgroundColor: '#DDF2E9' },
