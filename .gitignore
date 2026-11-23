@@ -56,3 +56,6 @@ example
 # supabase local
 supabase/.temp/
 supabase/.branches/
+/previous_facturas/
+/*.zip
+/*.pdf
