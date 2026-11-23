@@ -1,6 +1,6 @@
 # Progress / handoff
 
-Last updated: 19/11/2026. Read with `docs/SPEC.md` (requirements, data model, decisions log §11).
+Last updated: 23/11/2026. Read with `docs/SPEC.md` (requirements, data model, decisions log §11).
 
 ## Done
   — iPhone: Início, Fatura, Adicionar, Explorar, Análise · Web: Início, Importar Excel, Importar extrato CGD.
@@ -93,3 +93,20 @@ Last updated: 19/11/2026. Read with `docs/SPEC.md` (requirements, data model, de
 - 23/11/2026 Merged receipts take the receipt's name as description (`saveDraft` merge, `mergeReceiptInto`);
   migration `20261123050000_merged_receipt_description.sql`. `extract-receipt` schema: ≤16 nullable fields (API limit) —
   optional texts return "" and are mapped back to null; deployed by the user 23/11/2026.
+
+## State on 23/11/2026 (end of session)
+- All work committed and on GitHub (public repo, branch `main`). History was rewritten to remove personal details
+  (examples now use Lisboa/Porto and made-up amounts) — keep personal data, real amounts, phone numbers and the
+  Supabase project id out of tracked files. Commits use the GitHub noreply email (repo git config).
+- Migrations up to `20261123050000_merged_receipt_description.sql` written; the user applies them (confirm which are
+  applied before relying on them). Edge Functions `extract-receipt` and `categorise-lines` deployed with the latest code.
+- Local backup branches `backup-before-email-rewrite`, `backup-before-scrub` hold the old history (never pushed;
+  can be deleted).
+
+## Next
+1. **Import old invoices in bulk**: `previous_facturas/` (≈100 PDFs, e.g. `Fatura_Cartao_Continente_<date>_<time>.pdf`,
+   from 2023 on) and `previous_facturas_lidl.zip` (git-ignored, local only). Discuss first: a web screen that takes many
+   PDFs at once, runs each through `extract-receipt`, matches existing movements (Excel history / CGD lines, ±3 days,
+   same amount) and offers a batch review; duplicates already stopped by seller NIF + document number. Cost/time per
+   file and whether to skip the per-receipt review for high-confidence ones are open points.
+2. Then: e-Fatura import, other banks/cards (open question 3), email inbox, offline cache.
