@@ -9,9 +9,9 @@ import { Card, Chip, FieldLabel, Muted, Segmented } from '@/components/ui';
 import { chartColors, colors, radius, space } from '@/constants/theme';
 import { EVER_FROM, explore, loadExploreData, type Row, type Target } from '@/lib/explore';
 import { formatDate, formatEUR, monthStart, parseDate, todayISO } from '@/lib/format';
-import { useCategories } from '@/lib/queries';
+import { useCategories, useGroups } from '@/lib/queries';
 
-type Kind = Target['type'];
+type Kind = Exclude<Target['type'], 'group'>; // a group is chosen inside 'category'
 type PeriodKey = 'month' | '3m' | 'year' | 'ever' | 'custom';
 type Breakdown = 'category' | 'shop' | 'product';
 
@@ -33,6 +33,9 @@ export default function Explorar() {
   const { index } = useCategories();
   const [kind, setKind] = useState<Kind>('category');
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [groupId, setGroupId] = useState<string | null>(null); // a category group instead of a single category
+  const groups = useGroups();
+  const chosenGroup = groups.data?.find((g) => g.id === groupId) ?? null;
   const [text, setText] = useState('');
   const query = useDeferredValue(text);
   const [periodKey, setPeriodKey] = useState<PeriodKey>('year');
@@ -65,13 +68,15 @@ export default function Explorar() {
   });
 
   const target: Target | null =
-    kind === 'category' ? (categoryId ? { type: 'category', id: categoryId } : null) : query.trim().length >= 2 ? { type: kind, q: query } : null;
+    kind === 'category'
+      ? chosenGroup ? { type: 'group', members: chosenGroup.members } : categoryId ? { type: 'category', id: categoryId } : null
+      : query.trim().length >= 2 ? ({ type: kind, q: query } as Target) : null;
 
   const result = useMemo(
     () => (data.data && target && from && to ? explore(data.data, index, target, from, to) : null),
     // target is rebuilt each render; its fields are the real dependencies
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data.data, index, kind, categoryId, query, from, to],
+    [data.data, index, kind, categoryId, chosenGroup, query, from, to],
   );
 
   const localities = useMemo(() => {
@@ -97,7 +102,32 @@ export default function Explorar() {
           onChange={setKind}
         />
         {kind === 'category' ? (
-          <CategoryPicker index={index} kind="expense" value={categoryId} onChange={setCategoryId} />
+          <>
+            {(groups.data?.length ?? 0) > 0 && (
+              <View style={styles.chips}>
+                {groups.data!.map((g) => (
+                  <Chip
+                    key={g.id}
+                    label={`Grupo: ${g.name}`}
+                    selected={groupId === g.id}
+                    onPress={() => {
+                      setGroupId(groupId === g.id ? null : g.id);
+                      setCategoryId(null);
+                    }}
+                  />
+                ))}
+              </View>
+            )}
+            <CategoryPicker
+              index={index}
+              kind="expense"
+              value={categoryId}
+              onChange={(id) => {
+                setCategoryId(id);
+                setGroupId(null);
+              }}
+            />
+          </>
         ) : (
           <>
             <TextInput
@@ -140,7 +170,7 @@ export default function Explorar() {
 
       {!target && !data.isLoading && (
         <Muted>
-          {kind === 'category' ? 'Escolha uma categoria (pode ser uma subcategoria, ex.: Bebidas › Café).' : 'Escreva pelo menos 2 letras.'}
+          {kind === 'category' ? 'Escolha uma categoria (pode ser uma subcategoria, ex.: Bebidas › Café) ou um grupo.' : 'Escreva pelo menos 2 letras.'}
         </Muted>
       )}
 

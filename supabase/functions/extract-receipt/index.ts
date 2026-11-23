@@ -15,6 +15,10 @@ const SUPPORTS_FALLBACK = /^claude-(opus|sonnet|fable)-5/.test(MODEL);
 const anthropic = new Anthropic(); // reads ANTHROPIC_API_KEY
 
 const nullable = (type: string) => ({ type: [type, 'null'] });
+// The API allows at most 16 union-typed (nullable) fields per schema. These optional texts use "" for "not present"
+// instead, and are turned back into null below, so the app sees the same shape as before.
+const optionalText = { type: 'string' };
+const EMPTY_AS_NULL = ['store_address', 'store_locality', 'doc_type', 'atcud', 'billing_start', 'billing_end'] as const;
 
 const SCHEMA = {
   type: 'object',
@@ -26,17 +30,17 @@ const SCHEMA = {
   properties: {
     merchant_name: nullable('string'),
     store_name: nullable('string'),
-    store_address: nullable('string'),
-    store_locality: nullable('string'),
+    store_address: optionalText,
+    store_locality: optionalText,
     seller_nif: nullable('string'),
-    doc_type: nullable('string'),
+    doc_type: optionalText,
     doc_number: nullable('string'),
-    atcud: nullable('string'),
+    atcud: optionalText,
     date: nullable('string'),
     total: nullable('number'),
     vat_total: nullable('number'),
-    billing_start: nullable('string'),
-    billing_end: nullable('string'),
+    billing_start: optionalText,
+    billing_end: optionalText,
     lines: {
       type: 'array',
       items: {
@@ -47,7 +51,7 @@ const SCHEMA = {
           raw_text: { type: 'string' },
           name: { type: 'string' },
           quantity: nullable('number'),
-          unit: nullable('string'),
+          unit: optionalText,
           unit_price: nullable('number'),
           total: { type: 'number' },
           category: nullable('string'),
@@ -72,9 +76,9 @@ Output fields:
 - lines: one entry per purchased item, in printed order. raw_text exactly as printed; name a short readable Portuguese product name ("LEITE MIMOSA M/G 1L" → "Leite meio-gordo Mimosa 1L"). quantity/unit when printed (unit "un" or "kg"), unit_price per unit, total = the line's final amount after any discount applied to that line.
   Discounts or vouchers printed as their own lines are separate entries with a negative total.
   For an invoice with a single service (e.g. electricity), one line describing it.
-- category: choose the best match from the category list given by the user, copied exactly (e.g. "Alimentação › Supermercado"), or null if none fits. confidence: 0–1 for that category choice.
+- category: choose the best match from the category list given by the user, copied exactly, or null if none fits. Always choose the deepest category that fits (a leaf when possible): supermarket food and drinks go to "Alimentação › Supermercado › <section> › <category>" (e.g. "Alimentação › Supermercado › Talho › Porco", "Alimentação › Supermercado › Garrafeira › Vinho tinto"); non-food items go to their own categories: hygiene → "Saúde › Higiene › …", cleaning and household consumables → "Casa › Limpeza › …", kitchen/home goods → "Casa › Artigos para a Casa › …", pet products → "Animais › …", baby products → "Bebé › …", make-up → "Beleza › Cosmética › Maquilhagem". On a restaurant, café, pastelaria or cervejaria bill, drinks go to that place's "› Bebidas" subcategory when it exists (e.g. "Alimentação › Restaurantes › Bebidas") and food to the place itself (e.g. "Alimentação › Restaurantes"). confidence: 0–1 for that category choice.
 - warnings: short notes in Portuguese about anything unreadable or inconsistent (e.g. lines not adding up to the total).
-Use null for anything not present. Do not invent values.`;
+Use null for anything not present (for store_address, store_locality, doc_type, atcud, billing_start, billing_end and a line's unit: an empty string ""). Do not invent values.`;
 
 type Category = { id: string; name: string; parent_id: string | null; kind: string };
 
@@ -149,16 +153,21 @@ export default {
     if (response.stop_reason === 'refusal') return fail('O modelo recusou processar este documento.');
     if (response.stop_reason === 'max_tokens') return fail('Resposta demasiado longa (documento com demasiadas linhas).');
     const out = response.content.find((b) => b.type === 'text');
-    let extraction: unknown;
+    let extraction: Record<string, unknown>;
     try {
       extraction = JSON.parse(out && out.type === 'text' ? out.text : '');
     } catch {
       return fail('Resposta do modelo ilegível.');
     }
+    // "" → null for the fields that can't be nullable in the schema
+    for (const k of EMPTY_AS_NULL) if (typeof extraction[k] === 'string' && !(extraction[k] as string).trim()) extraction[k] = null;
+    if (Array.isArray(extraction.lines)) {
+      for (const l of extraction.lines as Record<string, unknown>[]) if (typeof l.unit === 'string' && !l.unit.trim()) l.unit = null;
+    }
 
     const { error: upErr } = await db
       .from('documents')
-      .update({ status: 'review', extraction: { ...(extraction as object), model: response.model, usage: response.usage } })
+      .update({ status: 'review', extraction: { ...extraction, model: response.model, usage: response.usage } })
       .eq('id', doc.id);
     if (upErr) return Response.json({ error: upErr.message }, { status: 500 });
     return Response.json({ extraction });

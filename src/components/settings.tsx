@@ -40,7 +40,15 @@ export function CategoriesSection() {
   const [kind, setKind] = useState<CategoryKind>('expense');
   const [newRoot, setNewRoot] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
+  const toggleOpen = (id: string) =>
+    setExpanded((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
 
   const roots = (index.children.get(null) ?? []).filter((c) => c.kind === kind);
   const active = roots.filter((c) => !c.archived);
@@ -56,20 +64,20 @@ export function CategoriesSection() {
         value={kind}
         onChange={(k) => (setKind(k), setEditing(null))}
       />
-      <Muted>Toque numa categoria para mudar o nome, arquivar ou acrescentar subcategorias.</Muted>
+      <Muted>Toque no nome para ver ou esconder as subcategorias; ✎ para mudar o nome, arquivar ou acrescentar subcategorias.</Muted>
 
-      {active.map((root) => {
-        const subs = (index.children.get(root.id) ?? []).filter((c) => !c.archived);
-        return (
-          <Card key={root.id} style={styles.catCard}>
-            <CategoryRow c={root} bold editing={editing === root.id} onToggle={() => setEditing(editing === root.id ? null : root.id)} />
-            {subs.map((s) => (
-              <CategoryRow key={s.id} c={s} editing={editing === s.id} onToggle={() => setEditing(editing === s.id ? null : s.id)} />
-            ))}
-            {editing === root.id && <AddSub parent={root} />}
-          </Card>
-        );
-      })}
+      {active.map((root) => (
+        <Card key={root.id} style={styles.catCard}>
+          <Tree
+            c={root}
+            depth={0}
+            editing={editing}
+            setEditing={setEditing}
+            expanded={expanded}
+            toggleOpen={toggleOpen}
+          />
+        </Card>
+      ))}
 
       <Card>
         <Text style={styles.h3}>Nova categoria principal</Text>
@@ -99,7 +107,63 @@ export function CategoriesSection() {
   );
 }
 
-function CategoryRow({ c, bold, editing, onToggle }: { c: Category; bold?: boolean; editing: boolean; onToggle: () => void }) {
+/** A category and (when open) its subcategories, recursively. */
+function Tree({
+  c,
+  depth,
+  editing,
+  setEditing,
+  expanded,
+  toggleOpen,
+}: {
+  c: Category;
+  depth: number;
+  editing: string | null;
+  setEditing: (id: string | null) => void;
+  expanded: Set<string>;
+  toggleOpen: (id: string) => void;
+}) {
+  const { index } = useCategories();
+  const subs = (index.children.get(c.id) ?? []).filter((x) => !x.archived);
+  const isOpen = depth === 0 ? !expanded.has(c.id) : expanded.has(c.id); // main categories start open
+  return (
+    <>
+      <CategoryRow
+        c={c}
+        depth={depth}
+        editing={editing === c.id}
+        onToggle={() => setEditing(editing === c.id ? null : c.id)}
+        subs={subs.length}
+        open={isOpen}
+        onOpen={() => toggleOpen(c.id)}
+      />
+      {editing === c.id && <AddSub parent={c} />}
+      {isOpen &&
+        subs.map((s) => (
+          <Tree key={s.id} c={s} depth={depth + 1} editing={editing} setEditing={setEditing} expanded={expanded} toggleOpen={toggleOpen} />
+        ))}
+    </>
+  );
+}
+
+function CategoryRow({
+  c,
+  depth,
+  editing,
+  onToggle,
+  subs,
+  open,
+  onOpen,
+}: {
+  c: Category;
+  depth: number;
+  editing: boolean;
+  onToggle: () => void;
+  subs: number;
+  open: boolean;
+  onOpen: () => void;
+}) {
+  const bold = depth === 0;
   const invalidate = useInvalidate();
   const [name, setName] = useState(c.name);
   const save = useMutation({
@@ -110,10 +174,33 @@ function CategoryRow({ c, bold, editing, onToggle }: { c: Category; bold?: boole
   });
   return (
     <View style={!bold && styles.subRowWrap}>
-      <Pressable accessibilityRole="button" accessibilityLabel={`Editar ${c.name}`} onPress={onToggle} style={styles.catRow}>
-        <Text style={[bold ? styles.rootName : styles.subName]}>{bold ? c.name : `   ${c.name}`}</Text>
-        <Text style={styles.chev}>{editing ? '−' : '›'}</Text>
-      </Pressable>
+      <View style={[styles.catRow, { paddingLeft: depth * 16 }]}>
+        {subs > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${open ? 'Esconder' : 'Mostrar'} as ${subs} subcategorias de ${c.name}`}
+            onPress={onOpen}
+            style={styles.twisty}>
+            <Text style={styles.twistyText}>{open ? '▾' : '▸'}</Text>
+          </Pressable>
+        ) : (
+          <View style={styles.twisty} />
+        )}
+        {/* the name opens/closes a category with subcategories; ✎ edits */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={subs > 0 ? `${open ? 'Esconder' : 'Mostrar'} subcategorias de ${c.name}` : `Editar ${c.name}`}
+          onPress={subs > 0 ? onOpen : onToggle}
+          style={styles.catName}>
+          <Text style={[bold ? styles.rootName : styles.subName]}>
+            {c.name}
+            {subs > 0 && !open ? <Text style={styles.count}> · {subs}</Text> : null}
+          </Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Editar ${c.name}`} onPress={onToggle} style={styles.edit}>
+          <Text style={[styles.editText, editing && { color: colors.accent }]}>{editing ? '−' : '✎'}</Text>
+        </Pressable>
+      </View>
       {editing && (
         <View style={styles.editBox}>
           <View style={styles.inline}>
@@ -388,6 +475,12 @@ const styles = StyleSheet.create({
   link: { color: colors.accent, fontSize: 14, fontWeight: '600', paddingVertical: space.xs },
   catCard: { gap: 0, paddingVertical: space.xs },
   catRow: { flexDirection: 'row', alignItems: 'center', minHeight: 44 },
+  catName: { flex: 1, flexDirection: 'row', alignItems: 'center', minHeight: 44 },
+  twisty: { width: 36, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  twistyText: { fontSize: 14, color: colors.accent },
+  edit: { width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  editText: { fontSize: 16, color: colors.muted },
+  count: { fontSize: 13, color: colors.muted, fontWeight: '400' },
   subRowWrap: { borderTopWidth: 1, borderTopColor: '#EEF0F3' },
   rootName: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.ink },
   subName: { flex: 1, fontSize: 15, color: colors.ink },

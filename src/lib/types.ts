@@ -1,6 +1,6 @@
 // Hand-written row types matching supabase/migrations (replace with generated types later).
 
-export type Kind = 'expense' | 'income' | 'transfer' | 'refund' | 'settlement';
+export type Kind = 'expense' | 'income' | 'transfer' | 'refund' | 'settlement' | 'payback'; // payback: acerto de contas
 export type CategoryKind = 'expense' | 'income';
 
 export type Category = {
@@ -12,6 +12,9 @@ export type Category = {
   color: string | null;
   archived: boolean;
 };
+
+/** Named set of categories across the tree (e.g. "Bebidas": supermarket + restaurant + café drinks). */
+export type CategoryGroup = { id: string; name: string; members: string[] }; // members count with their subcategories
 
 export type Account = { id: string; name: string; type: 'bank' | 'cash' | 'other'; bank_ref?: string | null };
 
@@ -31,13 +34,19 @@ export type Transaction = {
   recurring: boolean;
   needs_review: boolean;
   share_pct: number | null; // user's share of a shared expense (null = 100%)
+  split_people: number | null; // bill split between N people (restaurants, cafés…); null = not split
+  split_mode: SplitMode | null;
+  my_cents: number | null; // user's part of a split bill (kept by a database trigger, read-only here)
   external_key?: string | null; // 'shared:…' = the user's half of a bill the flatmate paid
   created_at: string;
 };
 
+/** 'equal': the user pays total ÷ N; 'consumed': (items the user had) ÷ N. */
+export type SplitMode = 'equal' | 'consumed';
+
 export type TransactionInput = Pick<
   Transaction,
-  'kind' | 'date' | 'amount_cents' | 'account_id' | 'category_id' | 'description' | 'recurring'
+  'kind' | 'date' | 'amount_cents' | 'account_id' | 'category_id' | 'description' | 'recurring' | 'split_people' | 'split_mode'
 >;
 
 export type SpendFact = { date: string; amount_cents: number; category_id: string | null };

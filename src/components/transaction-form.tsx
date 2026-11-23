@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { Platform, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { CategoryPicker } from '@/components/category-picker';
+import { SplitControl, type Split } from '@/components/split-control';
 import { Button, Chip, FieldLabel, Segmented } from '@/components/ui';
 import { colors, radius, space } from '@/constants/theme';
 import { addDays, centsToInput, formatDate, parseAmount, parseDate, todayISO } from '@/lib/format';
 import { useAccounts, useCategories } from '@/lib/queries';
+import { canSplit } from '@/lib/shared';
 import type { Transaction, TransactionInput } from '@/lib/types';
 
 type Props = {
@@ -13,9 +15,10 @@ type Props = {
   busy?: boolean;
   submitLabel: string;
   onSubmit: (input: TransactionInput) => void;
+  lines?: { total_cents: number; consumed: boolean }[]; // receipt items of the movement being edited
 };
 
-export function TransactionForm({ initial, busy, submitLabel, onSubmit }: Props) {
+export function TransactionForm({ initial, busy, submitLabel, onSubmit, lines }: Props) {
   const { index } = useCategories();
   const accounts = useAccounts();
 
@@ -26,6 +29,7 @@ export function TransactionForm({ initial, busy, submitLabel, onSubmit }: Props)
   const [accountId, setAccountId] = useState<string | null>(initial?.account_id ?? null);
   const [description, setDescription] = useState(initial?.description ?? '');
   const [recurring, setRecurring] = useState(initial?.recurring ?? false);
+  const [split, setSplit] = useState<Split>({ people: initial?.split_people ?? 1, mode: initial?.split_mode ?? 'equal' });
   const [tried, setTried] = useState(false);
 
   // Default account for new entries: the bank account (card payments are the common case).
@@ -33,6 +37,8 @@ export function TransactionForm({ initial, busy, submitLabel, onSubmit }: Props)
   const effectiveAccountId = accountId ?? (initial ? null : defaultAccountId);
 
   const cents = parseAmount(amount);
+  const splittable = kind === 'expense' && canSplit(index, categoryId);
+  const splitOn = splittable && split.people > 1;
   const date = parseDate(dateText);
   const today = todayISO();
 
@@ -53,6 +59,8 @@ export function TransactionForm({ initial, busy, submitLabel, onSubmit }: Props)
       account_id: effectiveAccountId,
       description: description.trim() || null,
       recurring,
+      split_people: splitOn ? split.people : null,
+      split_mode: splitOn ? split.mode : null,
     });
   };
 
@@ -104,6 +112,8 @@ export function TransactionForm({ initial, busy, submitLabel, onSubmit }: Props)
         <FieldLabel>Categoria</FieldLabel>
         <CategoryPicker index={index} kind={kind} value={categoryId} onChange={setCategoryId} />
       </View>
+
+      {splittable && <SplitControl value={split} onChange={setSplit} amountCents={cents} lines={lines} />}
 
       <View style={styles.field}>
         <FieldLabel nativeID="desc-label">Descrição</FieldLabel>

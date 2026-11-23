@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
+import { ExportSection } from '@/components/export-section';
+import { GroupsSection } from '@/components/groups-section';
 import { AccountsSection, CategoriesSection, ImportsSection, RulesSection } from '@/components/settings';
 import { Segmented } from '@/components/ui';
 import { colors, maxContentWidth, space } from '@/constants/theme';
 
-type Tab = 'categories' | 'rules' | 'accounts' | 'imports';
+type Tab = 'categories' | 'rules' | 'accounts' | 'imports' | 'export';
 
 export default function Definicoes() {
   const [tab, setTab] = useState<Tab>('categories');
@@ -18,14 +20,21 @@ export default function Definicoes() {
             { value: 'rules', label: 'Regras' },
             { value: 'accounts', label: 'Contas' },
             { value: 'imports', label: 'Importações' },
+            { value: 'export', label: 'Exportar' },
           ]}
           value={tab}
           onChange={setTab}
         />
-        {tab === 'categories' && <CategoriesSection />}
+        {tab === 'categories' && (
+          <>
+            <CategoriesSection />
+            <GroupsSection />
+          </>
+        )}
         {tab === 'rules' && <RulesSection />}
         {tab === 'accounts' && <AccountsSection />}
         {tab === 'imports' && <ImportsSection />}
+        {tab === 'export' && <ExportSection />}
       </View>
     </ScrollView>
   );

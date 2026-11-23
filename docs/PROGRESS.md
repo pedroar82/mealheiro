@@ -66,3 +66,30 @@ Last updated: 19/11/2026. Read with `docs/SPEC.md` (requirements, data model, de
   amount alone; fuel/food excluded; same-name repetitions offered for deletion; stray 50% expenses offered for un-sharing),
   `src/app/importar-partilhadas.tsx`, `src/components/shared-card.tsx`, `src/lib/shared.ts`; no minus sign on expenses.
   Next: phase 6 items (offline cache, email inbox, e-Fatura, export/backup) or other banks (open question 3).
+- 20/11/2026 Exportar (uncommitted, awaiting test): Definições → Exportar. `src/lib/export.ts` reads every table
+  (RLS-scoped) → .xlsx (Movimentos with "a sua parte", Produtos, Categorias, Regras) or full .json backup; web downloads,
+  iPhone opens the share sheet (`expo-sharing`, needs a new development build). Restore not built (not needed yet).
+- 22/11/2026 Split bills (uncommitted, awaiting test + migration `20261122000000_split_bills.sql`): SPEC decision 22/11.
+  `src/components/split-control.tsx` (stepper, equal/consumed, "Consumi" toggle) in the receipt review, the manual form
+  and the movement screen (item toggles save immediately); `src/lib/shared.ts` (`canSplit`, `splitPart`, `myShare` uses
+  `my_cents`); Explorar/Análise read `line_facts`; CGD import asks about received MB Way. Export has "Dividido por"/"Consumi".
+- 22/11/2026 Camera fixes (uncommitted, awaiting test): ✕ no longer under the status bar (explicit safe-area insets on
+  the overlay); "Galeria" button next to the shutter (`expo-image-picker`, in Expo Go) — same pipeline, the AT QR is
+  read from the picked image (`scanFromURLAsync`); PNG screenshots uploaded as image/png.
+- 23/11/2026 Acerto de contas (uncommitted, awaiting test + migration `20261123000000_payback.sql`): kind `payback`;
+  income movement card offers acerto da casa or acerto de contas; rows show "Acerto de contas (não conta)".
+  CGD import: received money that may be a friend's part (MB Way, or ≤ a bill split in the previous 14 days) is asked
+  Receita / Acerto de contas; acerto de contas creates a `payback` movement (bank line status 'created').
+- 23/11/2026 Receipt description = shop name when the merchant is a legal company (`describe`/`isLegalName` in
+  `src/lib/receipt.ts`); movement screen shows "Empresa: … · NIF"; data fix migration `20261123010000_receipt_description.sql`.
+- 23/11/2026 Supermarket sections + Grupos (uncommitted, awaiting test + migration `20261123020000_supermarket_groups.sql`
+  ; `extract-receipt` (prompt: most specific category) and new `categorise-lines` deployed 23/11/2026): `src/components/groups-section.tsx`,
+  Explorar group chips, `src/app/reorganizar-supermercado.tsx`, `mainCategory` = common parent.
+  Deploy: `npx supabase functions deploy <name> --remote=<project-ref> --use-api --yes` (CLI asks for confirmation; --project-ref is deprecated).
+- 23/11/2026 Category tree + supermarket detail (uncommitted, awaiting test + migrations `20261123030000_more_categories.sql`,
+  `20261123040000_supermarket_detail.sql`; both functions redeployed 23/11/2026 with the "deepest category" prompts):
+  new `src/components/category-picker.tsx` (search, drill-down), recursive tree in `settings.tsx`,
+  `reorganizar-supermercado.tsx` generalised ("Reorganizar produtos"), `useSetLineCategory` on the movement screen.
+- 23/11/2026 Merged receipts take the receipt's name as description (`saveDraft` merge, `mergeReceiptInto`);
+  migration `20261123050000_merged_receipt_description.sql`. `extract-receipt` schema: ≤16 nullable fields (API limit) —
+  optional texts return "" and are mapped back to null; deployed by the user 23/11/2026.

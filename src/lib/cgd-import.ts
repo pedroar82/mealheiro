@@ -208,6 +208,7 @@ export type ExistingTx = {
   description: string | null;
   source: string;
   recurring?: boolean;
+  split_people?: number | null; // a bill split between people (friends may send their part by MB Way)
 };
 
 /** amountDiffers: a recurring movement (salary, bill) whose amount changed — linking updates it to the bank's amount. */
@@ -221,6 +222,9 @@ export type Plan =
   | { type: 'refund'; target: RefundTarget; targetLabel: string }
   | { type: 'link'; candidates: Candidate[] } // choice made in the UI (default: best)
   | { type: 'mbway' } // person-to-person MB Way: user decides expense vs ignore
+  // money received that may be a friend's part of a split bill: MB Way, or any credit up to the amount of a bill split
+  // in the 14 days before (bank descriptions of received MB Way often just carry the sender's name)
+  | { type: 'payback_maybe'; mbway: boolean; splitBill: string | null }
   | { type: 'create'; kind: CategoryKind };
 
 const DAY = 86_400_000;
@@ -290,6 +294,20 @@ export function classify(
       .sort((a, b) => a.score - b.score);
     if (candidates.length) return { type: 'link', candidates };
     if (l.debit && isMbwayTransfer(l)) return { type: 'mbway' };
+    if (l.credit) {
+      const credit = l.credit;
+      const bill = existing
+        .filter(
+          (t) =>
+            t.kind === 'expense' && t.split_people != null && credit <= t.amount_cents &&
+            daysBetween(l.value, t.date) >= 0 && daysBetween(l.value, t.date) <= 14,
+        )
+        .sort((a, b) => b.date.localeCompare(a.date))[0];
+      const mbway = isMbwayTransfer(l);
+      if (mbway || bill) {
+        return { type: 'payback_maybe', mbway, splitBill: bill ? `${bill.description ?? 'Despesa'} (${bill.date}, ÷ ${bill.split_people})` : null };
+      }
+    }
     return { type: 'create', kind };
   });
   return plans;

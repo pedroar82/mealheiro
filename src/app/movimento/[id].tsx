@@ -4,15 +4,17 @@ import { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { SharedCard } from '@/components/shared-card';
+import { CategoryPicker } from '@/components/category-picker';
+import { ConsumedToggle } from '@/components/split-control';
 import { TransactionForm } from '@/components/transaction-form';
 import { Button, Card, Muted } from '@/components/ui';
 import { colors, maxContentWidth, space } from '@/constants/theme';
-import { categoryPath } from '@/lib/categories';
 import { formatDate, formatEUR } from '@/lib/format';
 import { errorText } from '@/lib/import-io';
 import { findMatches, mergeReceiptInto } from '@/lib/receipt';
 import { supabase } from '@/lib/supabase';
-import { useCategories, useDeleteTransaction, useLineItems, useSaveTransaction, useTransaction } from '@/lib/queries';
+import { useCategories, useDeleteTransaction, useLineItems, useSaveTransaction, useSetConsumed, useSetLineCategory, useTransaction } from '@/lib/queries';
+import { isSplit } from '@/lib/shared';
 
 const SOURCE_LABEL: Record<string, string> = {
   manual: 'Registo manual',
@@ -31,6 +33,8 @@ export default function EditMovimento() {
   const lines = useLineItems(id);
   const { index } = useCategories();
   const qc = useQueryClient();
+  const setConsumed = useSetConsumed();
+  const setLineCategory = useSetLineCategory();
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
 
@@ -45,6 +49,12 @@ export default function EditMovimento() {
     queryKey: ['store', t?.store_id],
     enabled: !!t?.store_id,
     queryFn: async () => (await supabase.from('stores').select('name, locality').eq('id', t!.store_id!).single()).data as { name: string; locality: string | null } | null,
+  });
+  // the company behind the shop (e.g. the Lda that runs a restaurant): kept, shown as secondary information
+  const merchant = useQuery({
+    queryKey: ['merchant', t?.merchant_id],
+    enabled: !!t?.merchant_id,
+    queryFn: async () => (await supabase.from('merchants').select('name, nif').eq('id', t!.merchant_id!).single()).data as { name: string; nif: string | null } | null,
   });
 
   const merge = async (targetId: string) => {
@@ -64,6 +74,10 @@ export default function EditMovimento() {
   if (!tx.data) return <Text style={styles.error}>Movimento não encontrado.</Text>;
 
   const editable = tx.data.kind === 'expense' || tx.data.kind === 'income';
+  // split bill: each consumed item carries its share of the user's part (proportionally to its price)
+  const split = isSplit(tx.data) && tx.data.my_cents != null;
+  const consumedSum = (lines.data ?? []).reduce((s, l) => s + (l.consumed ? l.total_cents : 0), 0);
+  const myLine = (c: number) => (split && consumedSum > 0 ? Math.round((c * tx.data!.my_cents!) / consumedSum) : null);
 
   return (
     <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic">
@@ -71,6 +85,12 @@ export default function EditMovimento() {
         <Muted>
           {[SOURCE_LABEL[tx.data.source] ?? tx.data.source, store.data?.name, store.data?.locality].filter(Boolean).join(' · ')}
         </Muted>
+        {merchant.data && merchant.data.name !== store.data?.name && merchant.data.name !== tx.data.description && (
+          <Muted>
+            Empresa: {merchant.data.name}
+            {merchant.data.nif ? ` · NIF ${merchant.data.nif}` : ''}
+          </Muted>
+        )}
 
         {(matches.data?.length ?? 0) > 0 && (
           <Card style={styles.matchCard}>
@@ -90,29 +110,46 @@ export default function EditMovimento() {
           <Card>
             <TransactionForm
               initial={tx.data}
+              lines={lines.data}
               submitLabel="Guardar alterações"
               busy={save.isPending}
               onSubmit={(input) => save.mutate({ id, input }, { onSuccess: () => router.back() })}
             />
           </Card>
         ) : (
-          tx.data.kind !== 'settlement' && <Muted>Transferências e reembolsos são criados pelas importações e não se editam aqui.</Muted>
+          tx.data.kind !== 'settlement' && tx.data.kind !== 'payback' && <Muted>Transferências e reembolsos são criados pelas importações e não se editam aqui.</Muted>
         )}
 
         {(lines.data?.length ?? 0) > 0 && (
           <Card>
             <Text style={styles.h3}>Produtos</Text>
-            {lines.data!.map((l) => (
-              <View key={l.id} style={styles.line}>
-                <View style={styles.lineMain}>
-                  <Text style={styles.lineName} numberOfLines={1}>{l.name}</Text>
-                  <Text style={[styles.lineCat, !l.category_id && { color: colors.warning }]} numberOfLines={1}>
-                    {categoryPath(index, l.category_id)}
-                  </Text>
+            {split && <Muted>Conta dividida por {tx.data.split_people}: toque em &quot;Consumi&quot; para marcar o que não consumiu.</Muted>}
+            <Muted>Mudar a categoria de um produto muda-a também nas outras compras do mesmo produto e fica memorizada.</Muted>
+            {setConsumed.error && <Text style={styles.error}>{setConsumed.error.message}</Text>}
+            {setLineCategory.error && <Text style={styles.error}>{setLineCategory.error.message}</Text>}
+            {lines.data!.map((l) => {
+              const mine = l.consumed ? myLine(l.total_cents) : null;
+              return (
+                <View key={l.id} style={styles.line}>
+                  <View style={styles.lineMain}>
+                    <Text style={[styles.lineName, split && !l.consumed && styles.notConsumed]} numberOfLines={1}>{l.name}</Text>
+                    <CategoryPicker
+                      index={index}
+                      kind="expense"
+                      value={l.category_id}
+                      onChange={(categoryId) => categoryId !== l.category_id && setLineCategory.mutate({ rawText: l.raw_text, categoryId })}
+                    />
+                    {split && (
+                      <ConsumedToggle name={l.name} consumed={l.consumed} onChange={(consumed) => setConsumed.mutate({ id: l.id, consumed })} />
+                    )}
+                  </View>
+                  <View style={styles.lineAmounts}>
+                    <Text style={[styles.lineAmount, l.total_cents < 0 && { color: colors.income }]}>{formatEUR(mine ?? l.total_cents)}</Text>
+                    {split && <Text style={styles.lineCat}>{mine != null ? `de ${formatEUR(l.total_cents)}` : `${formatEUR(l.total_cents)} · não conta`}</Text>}
+                  </View>
                 </View>
-                <Text style={[styles.lineAmount, l.total_cents < 0 && { color: colors.income }]}>{formatEUR(l.total_cents)}</Text>
-              </View>
-            ))}
+              );
+            })}
           </Card>
         )}
 
@@ -138,8 +175,10 @@ const styles = StyleSheet.create({
   h3: { fontSize: 15, fontWeight: '700', color: colors.ink },
   matchCard: { borderWidth: 1, borderColor: colors.accent },
   line: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: 6 },
-  lineMain: { flex: 1 },
+  lineMain: { flex: 1, gap: 2 },
   lineName: { fontSize: 14, color: colors.ink },
   lineCat: { fontSize: 12, color: colors.muted },
+  lineAmounts: { alignItems: 'flex-end' },
+  notConsumed: { color: colors.muted, textDecorationLine: 'line-through' },
   lineAmount: { fontSize: 14, fontWeight: '600', color: colors.ink, fontVariant: ['tabular-nums'] },
 });

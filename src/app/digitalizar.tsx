@@ -1,9 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
+import { CameraView, scanFromURLAsync, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ReceiptReview } from '@/components/receipt-review';
 import { Button, Card, Muted } from '@/components/ui';
@@ -42,6 +43,8 @@ export default function Digitalizar() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [storagePath, setStoragePath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // explicit insets: the overlay sits on top of the camera in a full-screen modal (status bar / Dynamic Island)
+  const insets = useSafeAreaInsets();
 
   const close = () => (router.canGoBack() ? router.back() : router.replace('/adicionar'));
 
@@ -61,6 +64,15 @@ export default function Digitalizar() {
     findDuplicate({ sellerNif: parsed.sellerNif, docNumber: parsed.docNumber }).then(setDuplicate);
   };
 
+  /** Send the image to the reader and open the review. */
+  const read = async (uid: string, base64: string, ext: 'jpg' | 'png', code: AtQr | null) => {
+    setStage('reading');
+    const up = await uploadAndExtract({ userId: uid, body: base64ToBytes(base64), ext, kind: 'receipt', qrRaw: code?.raw });
+    setStoragePath(up.storagePath);
+    setDraft(buildDraft(up.documentId, 'receipt', up.extraction, index, await loadLineRules(), code));
+    setStage('review');
+  };
+
   const shoot = async () => {
     const uid = session?.user.id;
     if (!uid || !camera.current) return;
@@ -68,11 +80,42 @@ export default function Digitalizar() {
     try {
       const pic = await camera.current.takePictureAsync({ quality: 0.5, base64: true, shutterSound: false });
       if (!pic?.base64) throw new Error('A câmara não devolveu a imagem.');
-      setStage('reading');
-      const up = await uploadAndExtract({ userId: uid, body: base64ToBytes(pic.base64), ext: 'jpg', kind: 'receipt', qrRaw: qr?.raw });
-      setStoragePath(up.storagePath);
-      setDraft(buildDraft(up.documentId, 'receipt', up.extraction, index, await loadLineRules(), qr));
-      setStage('review');
+      await read(uid, pic.base64, 'jpg', qr);
+    } catch (e) {
+      setError(errorText(e));
+      setStage('camera');
+    }
+  };
+
+  /** A receipt photo already in the gallery: same pipeline; the invoice QR is looked for in the image. */
+  const fromGallery = async () => {
+    const uid = session?.user.id;
+    if (!uid) return;
+    setError(null);
+    try {
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.5,
+        base64: true,
+        preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+      });
+      if (res.canceled) return;
+      const asset = res.assets[0];
+      if (!asset?.base64) throw new Error('Não foi possível ler a imagem.');
+      let code = qr;
+      if (!code) {
+        const found = await scanFromURLAsync(asset.uri, ['qr']).catch(() => []);
+        code = found.map((r) => parseAtQr(r.data)).find((x) => x != null) ?? null;
+        if (code) {
+          setQr(code);
+          const dup = await findDuplicate({ sellerNif: code.sellerNif, docNumber: code.docNumber });
+          if (dup) {
+            setDuplicate(dup);
+            return;
+          }
+        }
+      }
+      await read(uid, asset.base64, asset.mimeType === 'image/png' ? 'png' : 'jpg', code);
     } catch (e) {
       setError(errorText(e));
       setStage('camera');
@@ -83,7 +126,7 @@ export default function Digitalizar() {
     setError(null);
     setStage('saving');
     try {
-      const id = await saveDraft(d, storagePath, mergeInto);
+      const id = await saveDraft(d, storagePath, mergeInto, index);
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['spend'] });
       router.replace({ pathname: '/movimento/[id]', params: { id } });
@@ -121,6 +164,8 @@ export default function Digitalizar() {
           <Text style={styles.h2}>Acesso à câmara</Text>
           <Muted>Para digitalizar talões, o Mealheiro precisa da câmara. As fotos são apagadas depois de guardar.</Muted>
           <Button label="Permitir câmara" onPress={requestPermission} />
+          <Button label="Escolher foto da galeria" variant="secondary" onPress={fromGallery} />
+          {error && <Text style={{ color: colors.danger }}>{error}</Text>}
           <Button label="Fechar" variant="secondary" onPress={close} />
         </Card>
       </SafeAreaView>
@@ -139,7 +184,7 @@ export default function Digitalizar() {
         onBarcodeScanned={qr ? undefined : onQr}
         onCameraReady={() => setReady(true)}
       />
-      <SafeAreaView style={styles.overlay} pointerEvents="box-none">
+      <View style={[styles.overlay, { paddingTop: insets.top, paddingBottom: insets.bottom }]} pointerEvents="box-none">
         <View style={styles.topBar}>
           <Pressable accessibilityRole="button" accessibilityLabel="Fechar" onPress={close} style={styles.roundBtn}>
             <Text style={styles.roundText}>✕</Text>
@@ -177,18 +222,30 @@ export default function Digitalizar() {
           ) : (
             <>
               <Text style={styles.hint}>Enquadre o talão inteiro, com boa luz. O QR é lido automaticamente.</Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Fotografar talão"
-                disabled={!ready || !!duplicate}
-                onPress={shoot}
-                style={({ pressed }) => [styles.shutter, (!ready || duplicate) && { opacity: 0.4 }, pressed && { transform: [{ scale: 0.94 }] }]}>
-                <View style={styles.shutterInner} />
-              </Pressable>
+              <View style={styles.controls}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Escolher foto da galeria"
+                  disabled={!!duplicate}
+                  onPress={fromGallery}
+                  style={({ pressed }) => [styles.side, duplicate && { opacity: 0.4 }, pressed && { opacity: 0.7 }]}>
+                  <Text style={styles.sideIcon}>🖼</Text>
+                  <Text style={styles.sideText}>Galeria</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Fotografar talão"
+                  disabled={!ready || !!duplicate}
+                  onPress={shoot}
+                  style={({ pressed }) => [styles.shutter, (!ready || duplicate) && { opacity: 0.4 }, pressed && { transform: [{ scale: 0.94 }] }]}>
+                  <View style={styles.shutterInner} />
+                </Pressable>
+                <View style={styles.side} />
+              </View>
             </>
           )}
         </View>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
@@ -211,6 +268,10 @@ const styles = StyleSheet.create({
   bannerText: { fontSize: 15, color: colors.ink, fontWeight: '600' },
   bottom: { alignItems: 'center', gap: space.md, paddingBottom: space.lg, paddingHorizontal: space.md },
   hint: { color: '#fff', fontSize: 14, textAlign: 'center', textShadowColor: '#000', textShadowRadius: 4 },
+  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', alignSelf: 'stretch', paddingHorizontal: space.lg },
+  side: { width: 76, minHeight: 60, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  sideIcon: { fontSize: 26 },
+  sideText: { color: '#fff', fontSize: 13, fontWeight: '600', textShadowColor: '#000', textShadowRadius: 4 },
   shutter: { width: 76, height: 76, borderRadius: 38, borderWidth: 4, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   shutterInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#fff' },
   reading: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md, borderRadius: radius.md, backgroundColor: 'rgba(0,0,0,0.6)' },

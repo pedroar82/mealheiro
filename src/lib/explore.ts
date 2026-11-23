@@ -1,7 +1,7 @@
 // Explorar (SPEC §8): "how much did I spend on X in a period". X = category (any level), shop, place or product.
 // Data is loaded once per period and aggregated on the device (a few thousand rows at most).
 
-import { rootOf, type CategoryIndex } from '@/lib/categories';
+import { categoryPath, rootOf, type CategoryIndex } from '@/lib/categories';
 import { normDesc } from '@/lib/cgd-import';
 import { MONTHS_SHORT, addDays, todayISO } from '@/lib/format';
 import { fetchAll } from '@/lib/import-io';
@@ -15,7 +15,8 @@ export type Line = {
   transaction_id: string;
   name: string;
   raw_text: string;
-  total_cents: number;
+  total_cents: number; // printed price (unit prices)
+  my_cents: number; // the user's part (split / shared bills) — what counts as spending
   category_id: string | null;
   quantity: number | null;
   unit: string | null;
@@ -23,12 +24,12 @@ export type Line = {
   date: string;
   store_id: string | null;
 };
-type LineRow = Omit<Line, 'date' | 'store_id'> & { transactions: { date: string; store_id: string | null } | { date: string; store_id: string | null }[] };
 
 export type ExploreData = { facts: Fact[]; tx: Map<string, TxInfo>; stores: Map<string, Store>; merchants: Map<string, Merchant>; lines: Line[] };
 
 export type Target =
   | { type: 'category'; id: string }
+  | { type: 'group'; members: string[] } // category group: each member with its subcategories
   | { type: 'shop'; q: string }
   | { type: 'place'; q: string }
   | { type: 'product'; q: string };
@@ -56,12 +57,13 @@ export async function loadExploreData(from: string, to: string): Promise<Explore
     ),
     fetchAll<Store>((a, b) => supabase.from('stores').select('id, name, locality, merchant_id').order('id').range(a, b)),
     fetchAll<Merchant>((a, b) => supabase.from('merchants').select('id, name').order('id').range(a, b)),
-    fetchAll<LineRow>((a, b) =>
+    // receipt lines with the user's part; lines not consumed on a split bill are left out (view line_facts)
+    fetchAll<Line>((a, b) =>
       supabase
-        .from('line_items')
-        .select('transaction_id, name, raw_text, total_cents, category_id, quantity, unit, unit_price_cents, transactions!inner(date, store_id)')
-        .gte('transactions.date', from)
-        .lte('transactions.date', to)
+        .from('line_facts')
+        .select('transaction_id, name, raw_text, total_cents, my_cents, category_id, quantity, unit, unit_price_cents, date, store_id')
+        .gte('date', from)
+        .lte('date', to)
         .order('id')
         .range(a, b),
     ),
@@ -71,11 +73,7 @@ export async function loadExploreData(from: string, to: string): Promise<Explore
     tx: new Map(tx.map((t) => [t.id, t])),
     stores: new Map(stores.map((s) => [s.id, s])),
     merchants: new Map(merchants.map((m) => [m.id, m])),
-    // many-to-one embed: an object at runtime (typed as possibly an array by the untyped client)
-    lines: lines.map(({ transactions, ...l }) => {
-      const t = Array.isArray(transactions) ? transactions[0] : transactions;
-      return { ...l, date: t.date, store_id: t.store_id };
-    }),
+    lines,
   };
 }
 
@@ -117,7 +115,10 @@ const ITEMIZED = new Set(['receipt', 'pdf']);
 
 export function explore(d: ExploreData, idx: CategoryIndex, target: Target, from: string, to: string): Result {
   const q = 'q' in target ? normDesc(target.q.trim()) : '';
-  const cats = target.type === 'category' ? subtree(idx, target.id) : null;
+  const cats =
+    target.type === 'category' ? subtree(idx, target.id)
+    : target.type === 'group' ? new Set(target.members.flatMap((m) => [...subtree(idx, m)]))
+    : null;
   let matchedByText = 0;
   const textHits = new Set<string>();
 
@@ -130,7 +131,7 @@ export function explore(d: ExploreData, idx: CategoryIndex, target: Target, from
           .filter((l) => has(l.name, q) || has(l.raw_text, q))
           .map((l) => {
             const f = factOf.get(l.transaction_id);
-            return { date: l.date, amount_cents: l.total_cents, category_id: l.category_id, merchant_id: f?.merchant_id ?? null, store_id: f?.store_id ?? null, source: 'receipt', transaction_id: l.transaction_id };
+            return { date: l.date, amount_cents: l.my_cents, category_id: l.category_id, merchant_id: f?.merchant_id ?? null, store_id: f?.store_id ?? null, source: 'receipt', transaction_id: l.transaction_id };
           })
       : [];
   } else {
@@ -203,10 +204,15 @@ export function explore(d: ExploreData, idx: CategoryIndex, target: Target, from
         let cur = f.category_id ? idx.byId.get(f.category_id) : undefined;
         while (cur && cur.id !== target.id && cur.parent_id !== target.id) cur = cur.parent_id ? idx.byId.get(cur.parent_id) : undefined;
         id = cur?.id ?? null;
+      } else if (target.type === 'group') {
+        // inside a group: the member it belongs to (the deepest one, if members are nested)
+        let cur = f.category_id ? idx.byId.get(f.category_id) : undefined;
+        while (cur && !target.members.includes(cur.id)) cur = cur.parent_id ? idx.byId.get(cur.parent_id) : undefined;
+        id = cur?.id ?? null;
       } else {
         id = rootOf(idx, f.category_id);
       }
-      const name = id ? idx.byId.get(id)?.name ?? '?' : 'Por categorizar';
+      const name = id ? (target.type === 'group' ? categoryPath(idx, id) : idx.byId.get(id)?.name ?? '?') : 'Por categorizar';
       const label = target.type === 'category' && id === target.id ? `${name} (geral)` : name;
       return { key: id ?? 'none', label, cents: f.amount_cents, tx: f.transaction_id };
     }),
@@ -225,7 +231,7 @@ export function explore(d: ExploreData, idx: CategoryIndex, target: Target, from
     target.type === 'product'
       ? d.lines.filter((l) => has(l.name, q) || has(l.raw_text, q))
       : d.lines.filter((l) => matchedTx.has(l.transaction_id) && (!cats || (l.category_id && cats.has(l.category_id))));
-  const byProduct = group(productLines.map((l) => ({ key: normDesc(l.name), label: l.name, cents: l.total_cents, tx: l.transaction_id })));
+  const byProduct = group(productLines.map((l) => ({ key: normDesc(l.name), label: l.name, cents: l.my_cents, tx: l.transaction_id })));
 
   const noDetail = facts.filter((f) => !ITEMIZED.has(f.source)).reduce((s, f) => s + f.amount_cents, 0);
 

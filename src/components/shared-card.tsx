@@ -4,13 +4,13 @@ import { StyleSheet, Switch, Text, View } from 'react-native';
 import { Button, Card, Muted } from '@/components/ui';
 import { colors, space } from '@/constants/theme';
 import { formatEUR } from '@/lib/format';
-import { isHalfOfTheirs, isShared, myShare } from '@/lib/shared';
+import { isHalfOfTheirs, isShared, isSplit, myShare } from '@/lib/shared';
 import { supabase } from '@/lib/supabase';
 import type { Transaction } from '@/lib/types';
 
 const KEYS = ['transactions', 'transaction', 'spend', 'explore', 'incomes', 'recurring'];
 
-/** Movement detail: shared-expense switch (50%) and the flatmate "acerto da casa". */
+/** Movement detail: shared-expense switch (50%), "acerto da casa" (flatmate) and "acerto de contas" (friends). */
 export function SharedCard({ tx }: { tx: Transaction }) {
   const qc = useQueryClient();
   const update = useMutation({
@@ -41,6 +41,7 @@ export function SharedCard({ tx }: { tx: Transaction }) {
       </Card>
     );
   }
+  if (tx.kind === 'expense' && isSplit(tx)) return null; // a split bill: "Dividir a conta" in the form instead
   if (tx.kind === 'expense') {
     const shared = isShared(tx);
     return (
@@ -65,22 +66,53 @@ export function SharedCard({ tx }: { tx: Transaction }) {
       </Card>
     );
   }
-  if (tx.kind === 'income' || tx.kind === 'settlement') {
-    const settlement = tx.kind === 'settlement';
+  if (tx.kind === 'payback') {
     return (
       <Card>
-        <Text style={styles.label}>{settlement ? 'Acerto da casa' : 'É o acerto da casa?'}</Text>
+        <Text style={styles.label}>Acerto de contas</Text>
         <Muted>
-          {settlement
-            ? 'Transferência da colega de casa para acertar as contas partilhadas. Não conta como receita (as despesas já estão a metade).'
-            : 'Se esta entrada é a colega de casa a pagar a parte dela das contas, não é receita.'}
+          Alguém a devolver a parte dele de uma conta que pagou (ex.: um jantar dividido). Não conta como receita: nos seus
+          gastos já só conta a sua parte.
         </Muted>
         <Button
-          label={settlement ? 'Afinal é uma receita' : 'Sim, é acerto da casa'}
+          label="Afinal é uma receita"
           variant="secondary"
           busy={update.isPending}
-          onPress={() => update.mutate(settlement ? { kind: 'income' } : { kind: 'settlement', category_id: null, recurring: false })}
+          onPress={() => update.mutate({ kind: 'income' })}
         />
+        {update.error && <Text style={styles.error}>{update.error.message}</Text>}
+      </Card>
+    );
+  }
+  if (tx.kind === 'income') {
+    return (
+      <Card>
+        <Text style={styles.label}>É um acerto?</Text>
+        <Muted>
+          Se esta entrada é alguém a pagar a parte dele de uma despesa (contas da casa, um jantar dividido…), não é receita.
+        </Muted>
+        <Button
+          label="Acerto da casa (colega de casa)"
+          variant="secondary"
+          busy={update.isPending}
+          onPress={() => update.mutate({ kind: 'settlement', category_id: null, recurring: false })}
+        />
+        <Button
+          label="Acerto de contas (parte de uma conta dividida)"
+          variant="secondary"
+          busy={update.isPending}
+          onPress={() => update.mutate({ kind: 'payback', category_id: null, recurring: false })}
+        />
+        {update.error && <Text style={styles.error}>{update.error.message}</Text>}
+      </Card>
+    );
+  }
+  if (tx.kind === 'settlement') {
+    return (
+      <Card>
+        <Text style={styles.label}>Acerto da casa</Text>
+        <Muted>Transferência da colega de casa para acertar as contas partilhadas. Não conta como receita (as despesas já estão a metade).</Muted>
+        <Button label="Afinal é uma receita" variant="secondary" busy={update.isPending} onPress={() => update.mutate({ kind: 'income' })} />
         {update.error && <Text style={styles.error}>{update.error.message}</Text>}
       </Card>
     );

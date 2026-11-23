@@ -40,6 +40,7 @@ type Final =
   | { status: 'refund' }
   | { status: 'linked'; txId: string }
   | { status: 'ignored' }
+  | { status: 'payback' } // acerto de contas: a friend's part of a split bill (neither income nor spending)
   | { status: 'created'; kind: CategoryKind; key: string };
 
 type Done = Record<string, number>;
@@ -47,6 +48,8 @@ type Done = Record<string, number>;
 const addDays = (iso: string, n: number) => new Date(Date.parse(iso) + n * 86_400_000).toISOString().slice(0, 10);
 const amountOf = (l: BankLine) => (l.debit ? -l.debit : l.credit!);
 const groupKey = (kind: CategoryKind, key: string) => `${kind}|${key}`;
+/** Money received: the user's choice, else "acerto de contas" when a bill was split in the 14 days before. */
+const paybackChoice = (p: { splitBill: string | null }, chosen: 'income' | 'payback' | undefined) => chosen ?? (p.splitBill ? 'payback' : 'income');
 
 async function loadContext(lines: BankLine[], bankId: string) {
   const dates = lines.map((l) => l.value).sort();
@@ -56,7 +59,7 @@ async function loadContext(lines: BankLine[], bankId: string) {
     fetchAll<ExistingTx>((a, b) =>
       supabase
         .from('transactions')
-        .select('id, kind, date, amount_cents, account_id, description, source, recurring')
+        .select('id, kind, date, amount_cents, account_id, description, source, recurring, split_people')
         .in('kind', ['expense', 'income'])
         .gte('date', from)
         .lte('date', to)
@@ -89,6 +92,7 @@ export default function ImportarExtrato() {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [links, setLinks] = useState<Record<number, string>>({});
   const [mbway, setMbway] = useState<Record<number, 'expense' | 'ignore'>>({});
+  const [payback, setPayback] = useState<Record<number, 'income' | 'payback'>>({});
   const [notRefund, setNotRefund] = useState<Record<number, boolean>>({});
   const [cats, setCats] = useState<Record<string, string | null>>({});
   const [showLinks, setShowLinks] = useState(false);
@@ -109,10 +113,11 @@ export default function ImportarExtrato() {
         case 'refund': return notRefund[i] ? created : { status: 'refund' };
         case 'link': return links[i] && links[i] !== 'new' ? { status: 'linked', txId: links[i] } : created;
         case 'mbway': return mbway[i] === 'ignore' ? { status: 'ignored' } : created;
+        case 'payback_maybe': return paybackChoice(p, payback[i]) === 'payback' ? { status: 'payback' } : created;
         case 'create': return created;
       }
     });
-  }, [loaded, links, mbway, notRefund]);
+  }, [loaded, links, mbway, payback, notRefund]);
 
   const categoryOf = (kind: CategoryKind, key: string) => {
     const g = groupKey(kind, key);
@@ -173,6 +178,7 @@ export default function ImportarExtrato() {
       const plans = classify(st.lines, ctx.fps.map((f) => ctx.known.has(f)), ctx.existing, ctx.linkedIds, bank.id);
       setLinks(defaultLinks(plans));
       setMbway({});
+      setPayback({});
       setNotRefund({});
       setCats({});
       setShowLinks(false);
@@ -228,6 +234,7 @@ export default function ImportarExtrato() {
       const first: { i: number; row: Record<string, unknown> }[] = [];
       finals.forEach((f, i) => {
         if (f.status === 'created') first.push({ i, row: { ...base(i), kind: f.kind, category_id: categoryOf(f.kind, f.key) } });
+        if (f.status === 'payback') first.push({ i, row: { ...base(i), kind: 'payback', category_id: null } });
         if (f.status === 'cash_withdrawal') first.push({ i, row: { ...base(i), kind: 'transfer', to_account_id: cash.id, category_id: null } });
         if (f.status === 'linked') txFor.set(i, f.txId);
       });
@@ -280,7 +287,7 @@ export default function ImportarExtrato() {
               bank_category: lines[i].bankCategory,
               import_id: imp.id,
               transaction_id: txFor.get(i) ?? null,
-              status: f.status,
+              status: f.status === 'payback' ? 'created' : f.status,
             }],
       );
       for (const part of chunks(bankLines, 500)) {
@@ -346,7 +353,7 @@ export default function ImportarExtrato() {
           <Card style={styles.ok}>
             <Text style={styles.okText} accessibilityLiveRegion="polite">
               Importado: {done.created ?? 0} novos · {done.linked ?? 0} ligados · {done.cash_withdrawal ?? 0} levantamentos ·{' '}
-              {done.refund ?? 0} reembolsos{done.ignored ? ` · ${done.ignored} ignorados` : ''}{done.already ? ` · ${done.already} já importados` : ''}.
+              {done.refund ?? 0} reembolsos{done.payback ? ` · ${done.payback} acertos de contas` : ''}{done.ignored ? ` · ${done.ignored} ignorados` : ''}{done.already ? ` · ${done.already} já importados` : ''}.
             </Text>
             <Button label="Ver movimentos" variant="secondary" onPress={() => router.navigate('/movimentos')} />
             {(done.created ?? 0) > 0 && (
@@ -367,6 +374,7 @@ export default function ImportarExtrato() {
               <Stat label={`Levantamentos → ${cash?.name ?? 'Carteira'} (não é despesa)`} value={String(counts.cash_withdrawal ?? 0)} />
               <Stat label="Reembolsos" value={String(counts.refund ?? 0)} />
               <Stat label="Novos movimentos" value={String(counts.created ?? 0)} />
+              {(counts.payback ?? 0) > 0 && <Stat label="Acertos de contas (não são receita)" value={String(counts.payback)} />}
               {(counts.ignored ?? 0) > 0 && <Stat label="Ignorados" value={String(counts.ignored)} />}
               {loaded.chainBreaks.length === 0 ? (
                 <Muted>✓ Saldos consistentes linha a linha.</Muted>
@@ -413,7 +421,7 @@ export default function ImportarExtrato() {
               </Card>
             )}
 
-            {loaded.plans.some((p) => p.type === 'mbway' || p.type === 'refund') && (
+            {loaded.plans.some((p) => p.type === 'mbway' || p.type === 'payback_maybe' || p.type === 'refund') && (
               <Card>
                 <Text style={styles.h3}>Para decidir</Text>
                 {loaded.plans.map((p, i) => {
@@ -425,6 +433,24 @@ export default function ImportarExtrato() {
                         <View style={styles.chips}>
                           <Chip label="Despesa" selected={mbway[i] !== 'ignore'} onPress={() => setMbway((s) => ({ ...s, [i]: 'expense' }))} />
                           <Chip label="Não é gasto (ignorar)" selected={mbway[i] === 'ignore'} onPress={() => setMbway((s) => ({ ...s, [i]: 'ignore' }))} />
+                        </View>
+                      </View>
+                    );
+                  }
+                  if (p.type === 'payback_maybe') {
+                    const choice = paybackChoice(p, payback[i]);
+                    const what = p.mbway ? 'MB Way recebido' : 'Dinheiro recebido';
+                    return (
+                      <View key={i} style={styles.item}>
+                        <LineHead l={loaded.lines[i]} />
+                        <Muted>
+                          {p.splitBill
+                            ? `${what}. Pode ser a parte de alguém da conta dividida ${p.splitBill}: nesse caso é um acerto de contas, não receita.`
+                            : `${what}: é uma receita, ou alguém a pagar a parte de uma conta dividida (acerto de contas, não conta como receita)?`}
+                        </Muted>
+                        <View style={styles.chips}>
+                          <Chip label="Receita" selected={choice === 'income'} onPress={() => setPayback((s) => ({ ...s, [i]: 'income' }))} />
+                          <Chip label="Acerto de contas" selected={choice === 'payback'} onPress={() => setPayback((s) => ({ ...s, [i]: 'payback' }))} />
                         </View>
                       </View>
                     );

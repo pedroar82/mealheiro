@@ -42,6 +42,15 @@
         {
           "cameraPermission": "O Mealheiro usa a câmara para ler talões e o código QR das faturas."
         }
+      ],
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O Mealheiro acede às fotos para ler talões que já fotografou.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
       ]
     ],
     "experiments": {

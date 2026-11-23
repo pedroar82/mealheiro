@@ -88,7 +88,7 @@ export default function ImportarDocumento() {
     setError(null);
     setStage('saving');
     try {
-      const id = await saveDraft(d, storagePath, mergeInto);
+      const id = await saveDraft(d, storagePath, mergeInto, index);
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['spend'] });
       setSavedId(id);

@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { CategoryPicker } from '@/components/category-picker';
+import { ConsumedToggle, SplitControl } from '@/components/split-control';
 import { Button, Card, Chip, FieldLabel, Muted } from '@/components/ui';
 import { colors, radius, space } from '@/constants/theme';
 import type { CategoryIndex } from '@/lib/categories';
 import { centsToInput, formatDate, formatEUR, parseAmount, parseDate } from '@/lib/format';
-import { findDuplicate, findMatches, loadTarget, type Draft, type DraftLine, type Match } from '@/lib/receipt';
+import { findDuplicate, findMatches, loadTarget, mainCategory, type Draft, type DraftLine, type Match } from '@/lib/receipt';
+import { canSplit, splitPart } from '@/lib/shared';
 
 /** Review an extracted receipt/invoice before saving. Shared by the web upload and the iPhone scanner. */
 export function ReceiptReview({
@@ -67,9 +69,18 @@ export function ReceiptReview({
   const removeLine = (key: string) => setD((s) => ({ ...s, lines: s.lines.filter((l) => l.key !== key) }));
   const setAll = (category_id: string | null) => setD((s) => ({ ...s, lines: s.lines.map((l) => ({ ...l, category_id })) }));
 
+  // restaurants, cafés, pastelarias…: the bill can be split between people
+  const splittable = canSplit(index, mainCategory(d.lines, index));
+  const split = splittable && d.split.people > 1;
+  // each consumed item's share of the user's part (as the database spreads it: proportionally to the price)
+  const consumedSum = d.lines.reduce((s, l) => s + (l.consumed ? l.total_cents : 0), 0);
+  const myPart = split && total != null ? splitPart(total, d.split.people, d.split.mode, d.lines) : null;
+  const lineShare = (l: DraftLine) => (myPart != null && l.consumed && consumedSum > 0 ? Math.round((l.total_cents * myPart) / consumedSum) : null);
+
   const save = () => {
     if (!date || total == null) return;
-    onSave({ ...d, date, totalCents: total }, matches.some((m) => m.id === mergeInto) ? mergeInto : null);
+    const s = splittable ? d.split : { people: 1, mode: d.split.mode };
+    onSave({ ...d, date, totalCents: total, split: s }, matches.some((m) => m.id === mergeInto) ? mergeInto : null);
   };
 
   return (
@@ -146,6 +157,10 @@ export function ReceiptReview({
         </Card>
       )}
 
+      {splittable && (
+        <SplitControl value={d.split} onChange={(split) => setD((s) => ({ ...s, split }))} amountCents={total} lines={d.lines} />
+      )}
+
       <Card>
         <View style={styles.linesHead}>
           <Text style={styles.h3}>{d.lines.length} {d.lines.length === 1 ? 'linha' : 'linhas'}</Text>
@@ -168,7 +183,9 @@ export function ReceiptReview({
               {l.raw_text}
               {l.quantity != null && l.quantity !== 1 ? ` · ${String(l.quantity).replace('.', ',')} ${l.unit ?? ''}` : ''}
               {l.needs_review && l.category_id === l.initial_category_id ? ' · sugestão automática' : ''}
+              {lineShare(l) != null ? ` · a sua parte ${formatEUR(lineShare(l)!)}` : ''}
             </Muted>
+            {split && <ConsumedToggle name={l.name} consumed={l.consumed} onChange={(consumed) => setLine(l.key, { consumed })} />}
             <CategoryPicker index={index} kind="expense" value={l.category_id} onChange={(category_id) => setLine(l.key, { category_id })} />
           </View>
         ))}

@@ -403,3 +403,47 @@ note when the period includes history without product detail.
   Matching: exact amount, aligned in order per bill kind (rent is paid at the end of the previous month); otherwise only
   a movement whose description/category names the bill (renda, internet/MEO/NOS, eletricidade/EDP, água, gás) — the user
   says whether it is the whole bill (→ 50%), already their half, or unrelated. A similar amount alone is never a match.
+- 22/11/2026 — Split bills (restaurants, cafés, pastelarias, cervejarias): "Dividir a conta" by N people, shown when
+  the category is under Alimentação but not Supermercado (Alimentação › Pastelaria and › Cervejaria added). Per bill:
+  "Dividir igualmente" (user pays total ÷ N) or "Pelo que consumi" (user pays the items they had ÷ N). Each receipt item
+  can be marked "Não consumi": counts 0 for the user and leaves product stats; in equal mode the user's part is spread
+  over the consumed items by price. The movement keeps the full amount charged (bank matching unchanged);
+  `transactions.split_people`/`split_mode`, `line_items.consumed`, `transactions.my_cents` kept by a trigger;
+  `spend_facts` and the new `line_facts` view count only the user's part. Unit prices (price history) stay the printed
+  ones. Only equal division between N people (no uneven shares). In the CGD import, money received by MB Way, or any
+  credit up to the amount of a bill split in the 14 days before (received MB Way descriptions often show only the
+  sender's name), is asked: "Receita" or "Acerto de contas" (kind `payback`, default when such a bill exists).
+  Migration `20261122000000_split_bills.sql`.
+- 23/11/2026 — "Acerto de contas": kind `payback` = a friend paying back their part of a bill the user paid (split
+  restaurant bill etc.). Neither income nor spending. Set from an income movement ("É um acerto?" → acerto da casa /
+  acerto de contas); kept apart from `settlement` (acerto da casa), which the flat-bills import matches.
+  Migration `20261123000000_payback.sql`.
+- 23/11/2026 — Receipt description: the merchant name, or the shop's name when the merchant is a legal company name
+  (Lda, S.A., Unipessoal…) — e.g. a restaurant run by "Encantos & Olhares, Lda". The company stays on the merchant
+  (shown on the movement screen as "Empresa · NIF"). Migration `20261123010000_receipt_description.sql` fixes saved ones.
+- 23/11/2026 — Supermarket sections: Alimentação › Supermercado › Frutas e Legumes, Talho, Peixaria, Charcutaria e
+  Queijos, Padaria e Pastelaria, Laticínios e Ovos, Mercearia Salgada, Mercearia Doce, Snacks e Aperitivos, Congelados,
+  Refeições Prontas, Águas, Refrigerantes e Sumos, Bebidas Alcoólicas (non-food keeps Casa › Limpeza / Saúde › Higiene).
+  Alimentação › Bebidas / Snacks = consumed out; Restaurantes / Cervejaria / Pastelaria › Bebidas = drinks on those bills.
+  Category groups (`category_groups`, `category_group_members`; member counts with its subtree) aggregate across the
+  tree — seeded "Bebidas" and "Snacks"; edited in Definições › Categorias; chosen in Explorar (breakdown by member).
+  A receipt's own category is the common parent of its lines (within the main category with the largest share).
+  Past plain-Supermercado items: Definições › "Reorganizar produtos antigos" — Edge Function `categorise-lines`
+  suggests, the user reviews, line items + line rules move. Migration `20261123020000_supermarket_groups.sql`.
+- 23/11/2026 — Fuller category tree (migration `20261123030000_more_categories.sql`, only adds) and the user's supermarket
+  structure (`20261123040000_supermarket_detail.sql`): Alimentação › Supermercado › <secção> › <categoria> (Frutas e
+  Legumes, Talho, Peixaria, Padaria e Pastelaria, Charcutaria e Queijos, Laticínios e Ovos, Refeições Prontas, Congelados,
+  Mercearia, Pequeno-almoço, Doces e Snacks, Bio e Saudável, Bebidas, Garrafeira); non-food sections under Saúde ›
+  Higiene, Saúde › Farmácia › Parafarmácia, Beleza › Cosmética › Maquilhagem, Casa › Limpeza, Casa › Artigos para a Casa,
+  Casa › Eletrodomésticos e Utensílios, Educação, Lazer › Hobbies, new Animais and Bebé. The 20261123020000 sections
+  were reshaped (Mercearia Salgada → Mercearia, Águas → Bebidas › Águas, Snacks e Aperitivos → Doces e Snacks ›
+  Aperitivos…; Mercearia Doce / Refrigerantes e Sumos / Bebidas Alcoólicas folded into their parent). Groups: Bebidas =
+  Alimentação › Bebidas + Supermercado › Bebidas + Garrafeira + Restaurantes/Cervejaria/Pastelaria › Bebidas;
+  Snacks = Alimentação › Snacks + Supermercado › Doces e Snacks.
+  Categorisation: readers pick the deepest category; "Reorganizar produtos" details items left at a level with
+  subcategories (Supermercado, Saúde › Higiene, Casa › Limpeza, Casa › Artigos para a Casa); changing a product's
+  category on the movement screen moves every item with the same printed text and saves a rule.
+  Category picker: search + level-by-level browsing (any depth); Definições shows the full tree.
+- 23/11/2026 — Attaching a receipt to an existing movement (bank, Excel, manual) replaces its description with the
+  receipt's name (shop name when the merchant is a legal company). Migration `20261123050000_merged_receipt_description.sql`
+  fixes movements merged before.

@@ -2,8 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { indexCategories } from '@/lib/categories';
+import { linePattern } from '@/lib/receipt';
 import { supabase } from '@/lib/supabase';
-import type { Account, Category, SpendFact, Transaction, TransactionInput } from '@/lib/types';
+import type { Account, Category, CategoryGroup, SpendFact, Transaction, TransactionInput } from '@/lib/types';
 
 async function unwrap<T>(p: PromiseLike<{ data: T | null; error: { message: string } | null }>): Promise<T> {
   const { data, error } = await p;
@@ -39,6 +40,48 @@ export function useCreateCategory() {
       return found[0];
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
+  });
+}
+
+export function useGroups() {
+  return useQuery({
+    queryKey: ['groups'],
+    queryFn: async () => {
+      const rows = await unwrap<{ id: string; name: string; category_group_members: { category_id: string }[] }[]>(
+        supabase.from('category_groups').select('id, name, category_group_members(category_id)').order('name'),
+      );
+      return rows.map((g): CategoryGroup => ({ id: g.id, name: g.name, members: g.category_group_members.map((m) => m.category_id) }));
+    },
+    staleTime: 5 * 60_000,
+  });
+}
+
+type GroupChange =
+  | { op: 'create'; name: string }
+  | { op: 'rename'; id: string; name: string }
+  | { op: 'delete'; id: string }
+  | { op: 'add'; id: string; categoryId: string }
+  | { op: 'remove'; id: string; categoryId: string };
+
+export function useGroupChange() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (c: GroupChange) => {
+      const name = 'name' in c ? c.name.trim().replace(/\s+/g, ' ') : '';
+      if ((c.op === 'create' || c.op === 'rename') && !name) throw new Error('Escreva um nome.');
+      const run = async (p: PromiseLike<{ error: { message: string; code?: string } | null }>) => {
+        const { error } = await p;
+        if (error) throw new Error(error.code === '23505' ? 'Já existe um grupo com esse nome.' : error.message);
+      };
+      switch (c.op) {
+        case 'create': return run(supabase.from('category_groups').insert({ name }));
+        case 'rename': return run(supabase.from('category_groups').update({ name }).eq('id', c.id));
+        case 'delete': return run(supabase.from('category_groups').delete().eq('id', c.id));
+        case 'add': return run(supabase.from('category_group_members').upsert({ group_id: c.id, category_id: c.categoryId }, { ignoreDuplicates: true }));
+        case 'remove': return run(supabase.from('category_group_members').delete().eq('group_id', c.id).eq('category_id', c.categoryId));
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups'] }),
   });
 }
 
@@ -92,6 +135,7 @@ function useInvalidateMovements() {
     qc.invalidateQueries({ queryKey: ['transactions'] });
     qc.invalidateQueries({ queryKey: ['transaction'] });
     qc.invalidateQueries({ queryKey: ['spend'] });
+    qc.invalidateQueries({ queryKey: ['explore'] });
   };
 }
 
@@ -103,6 +147,49 @@ export function useSaveTransaction() {
       return unwrap(supabase.from('transactions').insert({ ...input, source: 'manual' }).select('id').single());
     },
     onSuccess: invalidate,
+  });
+}
+
+/** "Consumi / Não consumi" on a receipt item of a split bill (the database recomputes the user's part). */
+export function useSetConsumed() {
+  const invalidate = useInvalidateMovements();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, consumed }: { id: string; consumed: boolean }) =>
+      unwrap(supabase.from('line_items').update({ consumed }).eq('id', id).select('id').single()),
+    onSuccess: () => {
+      invalidate();
+      qc.invalidateQueries({ queryKey: ['line_items'] });
+    },
+  });
+}
+
+/**
+ * A receipt item's category, changed on the movement screen: every saved item with the same printed text moves too,
+ * and a rule makes future receipts use it.
+ */
+export function useSetLineCategory() {
+  const invalidate = useInvalidateMovements();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ rawText, categoryId }: { rawText: string; categoryId: string | null }) => {
+      await unwrap(supabase.from('line_items').update({ category_id: categoryId, needs_review: false }).eq('raw_text', rawText).select('id'));
+      if (categoryId) {
+        await unwrap(
+          supabase
+            .from('rules')
+            .upsert(
+              { scope: 'line_item', pattern: linePattern(rawText), match: 'exact', category_id: categoryId, origin: 'user' },
+              { onConflict: 'user_id,scope,match,pattern' },
+            )
+            .select('id'),
+        );
+      }
+    },
+    onSuccess: () => {
+      invalidate();
+      ['line_items', 'rules'].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    },
   });
 }
 
@@ -119,7 +206,7 @@ export function useDeleteTransaction() {
   });
 }
 
-export type LineItem = { id: string; name: string; raw_text: string; quantity: number | null; unit: string | null; total_cents: number; category_id: string | null };
+export type LineItem = { id: string; name: string; raw_text: string; quantity: number | null; unit: string | null; total_cents: number; category_id: string | null; consumed: boolean };
 
 export function useLineItems(transactionId: string | undefined) {
   return useQuery({
@@ -129,7 +216,7 @@ export function useLineItems(transactionId: string | undefined) {
       unwrap<LineItem[]>(
         supabase
           .from('line_items')
-          .select('id, name, raw_text, quantity, unit, total_cents, category_id')
+          .select('id, name, raw_text, quantity, unit, total_cents, category_id, consumed')
           .eq('transaction_id', transactionId!)
           .order('position'),
       ),

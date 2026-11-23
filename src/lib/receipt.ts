@@ -5,6 +5,7 @@ import { categoryPath, type CategoryIndex } from '@/lib/categories';
 import { normDesc } from '@/lib/cgd-import';
 import { addDays, todayISO } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
+import type { SplitMode } from '@/lib/types';
 
 /** What the Edge Function returns (schema in supabase/functions/extract-receipt). Amounts in euros. */
 export type Extraction = {
@@ -45,6 +46,7 @@ export type DraftLine = {
   category_id: string | null;
   initial_category_id: string | null; // to detect user changes (→ rule)
   needs_review: boolean; // category is the model's guess, not a rule
+  consumed: boolean; // false = the user didn't have it (split bills only)
 };
 
 export type Draft = {
@@ -65,6 +67,7 @@ export type Draft = {
   billingEnd: string | null;
   lines: DraftLine[];
   warnings: string[];
+  split: { people: number; mode: SplitMode }; // people 1 = not split (restaurants, cafés…)
 };
 
 export type LineRule = { pattern: string; category_id: string | null };
@@ -76,6 +79,16 @@ const validDate = (s: string | null) => (s && ISO.test(s) && !isNaN(Date.parse(s
 
 /** Line rules are keyed by the normalised printed text ('LEITE MIMOSA M/G 1L'). */
 export const linePattern = (raw: string) => normDesc(raw);
+
+/** 'Encantos & Olhares, Lda' — a company's legal name rather than the name customers know. */
+export const isLegalName = (s: string) => /(\b(lda|limitada|unipessoal|sgps|crl)|\bs\.?\s?a)\.?\s*$/i.test(s.trim()) || /\bsociedade\b/i.test(s);
+
+/**
+ * Movement description: the merchant ("Continente"), or the shop's name when the merchant is only the legal company
+ * that runs it (restaurant "O Tasco" run by "Encantos & Olhares, Lda"). The company stays on the merchant record.
+ */
+export const describe = (merchantName: string, storeName: string | null) =>
+  (storeName?.trim() && (!merchantName.trim() || isLegalName(merchantName)) ? storeName.trim() : merchantName.trim()) || null;
 
 /** '…, 1000-001 Lisboa' → 'Lisboa' (Portuguese postal code line). */
 export function localityFromAddress(address: string | null): string | null {
@@ -142,6 +155,7 @@ export function buildDraft(documentId: string, kind: Draft['kind'], x: Extractio
       category_id,
       initial_category_id: category_id,
       needs_review: !rule && !!guess,
+      consumed: true,
     };
   });
 
@@ -164,6 +178,7 @@ export function buildDraft(documentId: string, kind: Draft['kind'], x: Extractio
     billingStart: validDate(x.billing_start),
     billingEnd: validDate(x.billing_end),
     lines,
+    split: { people: 1, mode: 'equal' },
     warnings: [...x.warnings, ...(date ? [] : ['Data não encontrada — confirme.'])],
   };
   if (!qr) return draft;
@@ -180,11 +195,32 @@ export function buildDraft(documentId: string, kind: Draft['kind'], x: Extractio
   };
 }
 
-/** Category of the whole transaction: the one with the largest share of the lines. */
-export function mainCategory(lines: DraftLine[]): string | null {
+/**
+ * Category of the whole transaction. Lines spread over subcategories give their common parent
+ * (Supermercado › Talho + Supermercado › Águas → Supermercado; Restaurantes + Restaurantes › Bebidas → Restaurantes).
+ * Lines under different main categories (food + Casa › Limpeza): the common parent within the main category with the
+ * largest share. Without the category index: the single category with the largest share.
+ */
+export function mainCategory(lines: Pick<DraftLine, 'category_id' | 'total_cents'>[], idx?: CategoryIndex): string | null {
   const by = new Map<string, number>();
   for (const l of lines) if (l.category_id && l.total_cents > 0) by.set(l.category_id, (by.get(l.category_id) ?? 0) + l.total_cents);
-  return [...by.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  const largest = [...by.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  if (!idx || !largest) return largest;
+  const chain = (id: string) => {
+    const out: string[] = [];
+    for (let c = idx.byId.get(id); c; c = c.parent_id ? idx.byId.get(c.parent_id) : undefined) out.unshift(c.id);
+    return out; // root first
+  };
+  const root = chain(largest)[0];
+  const ids = [...by.keys()].filter((id) => chain(id)[0] === root);
+  let common = chain(ids[0]);
+  for (const id of ids.slice(1)) {
+    const c = chain(id);
+    let n = 0;
+    while (n < common.length && n < c.length && common[n] === c[n]) n++;
+    common = common.slice(0, n);
+  }
+  return common[common.length - 1] ?? largest;
 }
 
 type Row = { id: string };
@@ -222,7 +258,7 @@ export async function discardDocument(documentId: string, storagePath: string | 
 export const DUPLICATE = 'duplicate';
 
 /** Write transaction + line items + merchant/store, learn rules, then delete the uploaded file. */
-export async function saveDraft(d: Draft, storagePath: string | null, mergeInto?: string | null): Promise<string> {
+export async function saveDraft(d: Draft, storagePath: string | null, mergeInto?: string | null, idx?: CategoryIndex): Promise<string> {
   // 1. claim (seller_nif, doc_number) first — the unique constraint stops a second save of the same invoice
   try {
     await must(
@@ -268,7 +304,7 @@ export async function saveDraft(d: Draft, storagePath: string | null, mergeInto?
   }
 
   // 3. transaction + lines (uncategorised discount lines follow the receipt's main category)
-  const main = mainCategory(d.lines);
+  const main = mainCategory(d.lines, idx);
   const lines = d.lines.map((l) => (l.total_cents < 0 && !l.category_id ? { ...l, category_id: main } : l));
   // a previous save of this document that failed halfway is replaced, never duplicated (line items cascade).
   // Only rows the receipt itself created (source receipt/pdf) are removed — never a movement it was merged into.
@@ -281,11 +317,18 @@ export async function saveDraft(d: Draft, storagePath: string | null, mergeInto?
     billing_start: d.billingStart,
     billing_end: d.billingEnd,
     needs_review: lines.some((l) => !l.category_id),
+    // split bill: the database derives the user's part (my_cents) from these and the consumed lines
+    split_people: d.split.people > 1 ? d.split.people : null,
+    split_mode: d.split.people > 1 ? d.split.mode : null,
   };
   let tx: Row;
   if (mergeInto) {
-    // same real purchase already recorded (Excel, manual, bank): attach the receipt to it, keep its date/amount/account
-    tx = await must(supabase.from('transactions').update(details).eq('id', mergeInto).select('id').single());
+    // same real purchase already recorded (Excel, manual, bank): attach the receipt to it, keep its date/amount/account.
+    // The receipt's name replaces the description (bank texts like "PAYPAYUE INST PAGAM R" say little; decided 23/11/2026).
+    const description = describe(name, d.storeName);
+    tx = await must(
+      supabase.from('transactions').update(description ? { ...details, description } : details).eq('id', mergeInto).select('id').single(),
+    );
     await run(supabase.from('line_items').delete().eq('transaction_id', mergeInto));
   } else {
     tx = await must(
@@ -297,7 +340,7 @@ export async function saveDraft(d: Draft, storagePath: string | null, mergeInto?
           date: d.date,
           amount_cents: d.totalCents,
           account_id: null, // payment method isn't asked; the bank import links card payments by amount/date
-          description: name || null,
+          description: describe(name, d.storeName),
           source: d.kind === 'pdf_invoice' ? 'pdf' : 'receipt',
         })
         .select('id')
@@ -318,6 +361,7 @@ export async function saveDraft(d: Draft, storagePath: string | null, mergeInto?
           total_cents: l.total_cents,
           category_id: l.category_id,
           needs_review: l.needs_review && l.category_id === l.initial_category_id,
+          consumed: d.split.people > 1 ? l.consumed : true,
         })),
       ),
     );
@@ -369,7 +413,7 @@ export type Uploaded = { documentId: string; storagePath: string; extraction: Ex
 export async function uploadAndExtract(opts: {
   userId: string;
   body: Blob | ArrayBuffer | Uint8Array;
-  ext: 'jpg' | 'pdf';
+  ext: 'jpg' | 'png' | 'pdf';
   kind: Draft['kind'];
   qrRaw?: string | null;
 }): Promise<Uploaded> {
@@ -378,7 +422,7 @@ export async function uploadAndExtract(opts: {
   try {
     const up = await supabase.storage
       .from('uploads')
-      .upload(path, opts.body, { contentType: opts.ext === 'pdf' ? 'application/pdf' : 'image/jpeg' });
+      .upload(path, opts.body, { contentType: opts.ext === 'pdf' ? 'application/pdf' : opts.ext === 'png' ? 'image/png' : 'image/jpeg' });
     if (up.error) throw new Error(up.error.message);
     const doc = await must(
       supabase.from('documents').insert({ type: opts.kind, storage_path: path, status: 'processing', qr_raw: opts.qrRaw ?? null }).select('id').single(),
@@ -439,9 +483,10 @@ export async function findMatches(date: string, totalCents: number, excludeId?: 
  * line items, merchant, store and document move to the target; the receipt's own movement is deleted.
  */
 export async function mergeReceiptInto(receiptTxId: string, targetId: string) {
-  const src = await must<{ document_id: string | null; merchant_id: string | null; store_id: string | null; category_id: string | null; needs_review: boolean; billing_start: string | null; billing_end: string | null }>(
-    supabase.from('transactions').select('document_id, merchant_id, store_id, category_id, needs_review, billing_start, billing_end').eq('id', receiptTxId).single(),
+  const src = await must<{ document_id: string | null; merchant_id: string | null; store_id: string | null; category_id: string | null; needs_review: boolean; billing_start: string | null; billing_end: string | null; description: string | null }>(
+    supabase.from('transactions').select('document_id, merchant_id, store_id, category_id, needs_review, billing_start, billing_end, description').eq('id', receiptTxId).single(),
   );
+  if (!src.description) delete (src as { description?: string | null }).description; // keep the target's if the receipt has none
   await run(supabase.from('line_items').update({ transaction_id: targetId }).eq('transaction_id', receiptTxId));
   await run(supabase.from('transactions').update({ document_id: null }).eq('id', receiptTxId));
   await must(supabase.from('transactions').update(src).eq('id', targetId).select('id').single());

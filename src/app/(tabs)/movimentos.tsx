@@ -27,7 +27,7 @@ export default function Movimentos() {
     const list = (tx.data ?? []).filter((t) => {
       if (filter === 'expense' && t.kind !== 'expense') return false;
       if (filter === 'income' && t.kind !== 'income') return false;
-      if (filter === 'review' && !(t.needs_review || (!t.category_id && t.kind !== 'transfer' && t.kind !== 'refund' && t.kind !== 'settlement'))) return false;
+      if (filter === 'review' && !(t.needs_review || (!t.category_id && t.kind !== 'transfer' && t.kind !== 'refund' && t.kind !== 'settlement' && t.kind !== 'payback'))) return false;
       if (!q) return true;
       return [t.description, categoryPath(index, t.category_id)].some((s) => s?.toLowerCase().includes(q));
     });

@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, space } from '@/constants/theme';
 import { categoryPath, type CategoryIndex } from '@/lib/categories';
 import { formatEUR } from '@/lib/format';
-import { isHalfOfTheirs, isShared, myCost } from '@/lib/shared';
+import { isHalfOfTheirs, isShared, isSplit, myCost } from '@/lib/shared';
 import type { Account, Transaction } from '@/lib/types';
 
 export function TransactionRow({ tx, index, accounts }: { tx: Transaction; index: CategoryIndex; accounts?: Account[] }) {
@@ -12,20 +12,22 @@ export function TransactionRow({ tx, index, accounts }: { tx: Transaction; index
   const transfer = tx.kind === 'transfer';
   const refund = tx.kind === 'refund';
   const settlement = tx.kind === 'settlement';
+  const payback = tx.kind === 'payback';
   const half = tx.kind === 'expense' && isHalfOfTheirs(tx); // already the user's half of a bill the flatmate paid
-  const shared = tx.kind === 'expense' && (isShared(tx) || half);
+  const split = tx.kind === 'expense' && isSplit(tx);
+  const shared = tx.kind === 'expense' && (isShared(tx) || half || split);
   const title = tx.description || (tx.category_id ? index.byId.get(tx.category_id)?.name : null) || (income ? 'Receita' : 'Despesa');
   const account = accounts?.find((a) => a.id === tx.account_id)?.name;
   const subtitle = [
-    transfer ? 'Transferência' : refund ? 'Reembolso' : settlement ? 'Acerto da casa (não conta)' : categoryPath(index, tx.category_id),
-    half ? 'a sua metade' : shared ? `pagou ${formatEUR(tx.amount_cents)}` : null,
+    transfer ? 'Transferência' : refund ? 'Reembolso' : settlement ? 'Acerto da casa (não conta)' : payback ? 'Acerto de contas (não conta)' : categoryPath(index, tx.category_id),
+    half ? 'a sua metade' : split ? `pagou ${formatEUR(tx.amount_cents)} ÷ ${tx.split_people}` : shared ? `pagou ${formatEUR(tx.amount_cents)}` : null,
     account,
   ]
     .filter(Boolean)
     .join(' · ');
   // expenses without a minus sign (decided 20/11/2026); a shared expense shows the user's part
   const amount = income || refund ? formatEUR(tx.amount_cents, { sign: true }) : formatEUR(tx.kind === 'expense' ? myCost(tx) : tx.amount_cents);
-  const muted = transfer || settlement;
+  const muted = transfer || settlement || payback;
 
   return (
     <Pressable
@@ -40,7 +42,7 @@ export function TransactionRow({ tx, index, accounts }: { tx: Transaction; index
       </View>
       <View style={styles.main}>
         <Text style={styles.title} numberOfLines={1}>{title}</Text>
-        <Text style={[styles.subtitle, !tx.category_id && !transfer && !refund && !settlement && { color: colors.warning }]} numberOfLines={1}>
+        <Text style={[styles.subtitle, !tx.category_id && !transfer && !refund && !settlement && !payback && { color: colors.warning }]} numberOfLines={1}>
           {subtitle}
         </Text>
       </View>

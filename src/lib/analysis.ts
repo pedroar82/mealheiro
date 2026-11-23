@@ -107,7 +107,7 @@ export function topProducts(d: ExploreData, month: string, n = 5): TopProduct[] 
     if (monthKey(l.date) !== month || l.total_cents <= 0) continue;
     const key = productKey(l);
     const e = m.get(key) ?? { key, name: l.name, purchases: 0, cents: 0, categoryId: l.category_id, txs: new Set<string>() };
-    e.cents += l.total_cents;
+    e.cents += l.my_cents; // the user's part (a split bill counts only their share)
     e.txs.add(l.transaction_id);
     m.set(key, e);
   }
