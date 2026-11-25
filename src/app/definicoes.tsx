@@ -12,7 +12,7 @@ type Tab = 'categories' | 'rules' | 'accounts' | 'imports' | 'export';
 export default function Definicoes() {
   const [tab, setTab] = useState<Tab>('categories');
   return (
-    <ScrollView style={styles.page} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
+    <ScrollView style={styles.page} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" automaticallyAdjustKeyboardInsets>
       <View style={styles.inner}>
         <Segmented
           options={[

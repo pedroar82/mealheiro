@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { MonthSwitcher, useMonth } from '@/components/month-switcher';
+import { PeriodSwitcher, usePeriod } from '@/components/month-switcher';
 import { Screen } from '@/components/screen';
 import { myCost } from '@/lib/shared';
 import { TransactionRow } from '@/components/transaction-row';
@@ -9,16 +9,17 @@ import { Card, Chip, Muted } from '@/components/ui';
 import { colors, radius, space } from '@/constants/theme';
 import { categoryPath } from '@/lib/categories';
 import { formatDayShort, formatEUR } from '@/lib/format';
-import { useAccounts, useCategories, useTransactions } from '@/lib/queries';
+import { useAccounts, useCategories, useTransactions, useUncategorised } from '@/lib/queries';
 import type { Transaction } from '@/lib/types';
 
 type Filter = 'all' | 'expense' | 'income' | 'review';
 
 export default function Movimentos() {
-  const month = useMonth();
-  const tx = useTransactions(month.from, month.to);
+  const period = usePeriod();
+  const tx = useTransactions(period.from, period.to);
   const { index } = useCategories();
   const accounts = useAccounts();
+  const loose = useUncategorised().data;
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
 
@@ -27,7 +28,7 @@ export default function Movimentos() {
     const list = (tx.data ?? []).filter((t) => {
       if (filter === 'expense' && t.kind !== 'expense') return false;
       if (filter === 'income' && t.kind !== 'income') return false;
-      if (filter === 'review' && !(t.needs_review || (!t.category_id && t.kind !== 'transfer' && t.kind !== 'refund' && t.kind !== 'settlement' && t.kind !== 'payback'))) return false;
+      if (filter === 'review' && !(loose?.has(t.id) || (!t.category_id && t.kind !== 'transfer' && t.kind !== 'refund' && t.kind !== 'settlement' && t.kind !== 'payback'))) return false;
       if (!q) return true;
       return [t.description, categoryPath(index, t.category_id)].some((s) => s?.toLowerCase().includes(q));
     });
@@ -41,11 +42,11 @@ export default function Movimentos() {
       items,
       spent: items.reduce((s, t) => s + (t.kind === 'expense' ? myCost(t) : t.kind === 'refund' ? -t.amount_cents : 0), 0),
     }));
-  }, [tx.data, query, filter, index]);
+  }, [tx.data, query, filter, index, loose]);
 
   return (
     <Screen title="Movimentos">
-      <MonthSwitcher {...month} />
+      <PeriodSwitcher month={period.month} range={period.range} setRange={period.setRange} />
       <TextInput
         value={query}
         onChangeText={setQuery}
@@ -63,7 +64,7 @@ export default function Movimentos() {
 
       {tx.isLoading && <ActivityIndicator />}
       {tx.error && <Text style={styles.error}>{tx.error.message}</Text>}
-      {!tx.isLoading && groups.length === 0 && <Muted>Sem movimentos neste mês.</Muted>}
+      {!tx.isLoading && groups.length === 0 && <Muted>{period.range ? 'Sem movimentos neste período.' : 'Sem movimentos neste mês.'}</Muted>}
 
       {groups.map((g) => (
         <Card key={g.date} style={styles.group}>

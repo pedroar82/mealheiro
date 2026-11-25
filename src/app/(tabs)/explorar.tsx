@@ -1,8 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useDeferredValue, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { CategoryPicker } from '@/components/category-picker';
+import { PriceComparisonView } from '@/components/price-comparison';
+import { ProductPicker } from '@/components/product-picker';
 import { BarChart } from '@/components/charts';
 import { Screen } from '@/components/screen';
 import { Card, Chip, FieldLabel, Muted, Segmented } from '@/components/ui';
@@ -23,10 +26,9 @@ const PERIODS: { key: PeriodKey; label: string }[] = [
   { key: 'custom', label: 'Personalizado' },
 ];
 
-const PLACEHOLDER: Record<Exclude<Kind, 'category'>, string> = {
+const PLACEHOLDER: Record<'shop' | 'place', string> = {
   shop: 'ex.: Continente, Lidl, Starbucks',
   place: 'ex.: Lisboa, Porto',
-  product: 'ex.: leite, café, detergente',
 };
 
 export default function Explorar() {
@@ -37,11 +39,29 @@ export default function Explorar() {
   const groups = useGroups();
   const chosenGroup = groups.data?.find((g) => g.id === groupId) ?? null;
   const [text, setText] = useState('');
+  const [productId, setProductId] = useState<string | null>(null);
+  const [brand, setBrand] = useState<string | null>(null); // null = every brand
   const query = useDeferredValue(text);
   const [periodKey, setPeriodKey] = useState<PeriodKey>('year');
   const [fromText, setFromText] = useState('');
   const [toText, setToText] = useState('');
   const [breakdown, setBreakdown] = useState<Breakdown>('category');
+
+  // opened from the Início chart with a category and period: apply them once per new link
+  const params = useLocalSearchParams<{ categoria?: string; de?: string; ate?: string }>();
+  const link = params.categoria ? `${params.categoria}|${params.de ?? ''}|${params.ate ?? ''}` : null;
+  const [applied, setApplied] = useState<string | null>(null);
+  if (link && link !== applied) {
+    setApplied(link);
+    setKind('category');
+    setGroupId(null);
+    setCategoryId(params.categoria!);
+    if (params.de && params.ate) {
+      setPeriodKey('custom');
+      setFromText(formatDate(params.de));
+      setToText(formatDate(params.ate));
+    }
+  }
 
   const today = todayISO();
   const y = Number(today.slice(0, 4));
@@ -70,13 +90,14 @@ export default function Explorar() {
   const target: Target | null =
     kind === 'category'
       ? chosenGroup ? { type: 'group', members: chosenGroup.members } : categoryId ? { type: 'category', id: categoryId } : null
-      : query.trim().length >= 2 ? ({ type: kind, q: query } as Target) : null;
+      : kind === 'product' ? (productId ? { type: 'product', id: productId, brand } : null)
+      : query.trim().length >= 2 ? { type: kind, q: query } : null;
 
   const result = useMemo(
     () => (data.data && target && from && to ? explore(data.data, index, target, from, to) : null),
     // target is rebuilt each render; its fields are the real dependencies
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data.data, index, kind, categoryId, chosenGroup, query, from, to],
+    [data.data, index, kind, categoryId, chosenGroup, query, productId, brand, from, to],
   );
 
   const localities = useMemo(() => {
@@ -84,6 +105,13 @@ export default function Explorar() {
     data.data?.stores.forEach((s) => s.locality && set.add(s.locality));
     return [...set].sort((a, b) => a.localeCompare(b, 'pt'));
   }, [data.data]);
+
+  const brands = useMemo(() => {
+    const set = new Set<string>();
+    data.data?.lines.forEach((l) => l.product_id === productId && l.brand && set.add(l.brand));
+    return [...set].sort((a, b) => a.localeCompare(b, 'pt'));
+  }, [data.data, productId]);
+  const productName = (productId && data.data?.products.get(productId)) || 'produto';
 
   const rows: Row[] = result ? (breakdown === 'category' ? result.byCategory : breakdown === 'shop' ? result.byShop : result.byProduct) : [];
   const maxRow = Math.max(1, ...rows.map((r) => Math.abs(r.cents)));
@@ -128,6 +156,19 @@ export default function Explorar() {
               }}
             />
           </>
+        ) : kind === 'product' ? (
+          <>
+            <ProductPicker value={productId} onChange={(id) => (setProductId(id), setBrand(null))} />
+            {brands.length > 0 && (
+              <View style={styles.chips}>
+                <Chip label="Todas as marcas" selected={!brand} onPress={() => setBrand(null)} />
+                {brands.map((b) => <Chip key={b} label={b} selected={brand === b} onPress={() => setBrand(brand === b ? null : b)} />)}
+              </View>
+            )}
+            <Pressable accessibilityRole="link" onPress={() => router.push('/produtos')}>
+              <Text style={styles.link}>Gerir produtos</Text>
+            </Pressable>
+          </>
         ) : (
           <>
             <TextInput
@@ -170,7 +211,11 @@ export default function Explorar() {
 
       {!target && !data.isLoading && (
         <Muted>
-          {kind === 'category' ? 'Escolha uma categoria (pode ser uma subcategoria, ex.: Bebidas › Café) ou um grupo.' : 'Escreva pelo menos 2 letras.'}
+          {kind === 'category'
+            ? 'Escolha uma categoria (pode ser uma subcategoria, ex.: Bebidas › Café) ou um grupo. Para todos os leites, escolha a categoria Leite.'
+            : kind === 'product'
+              ? 'Escolha um produto (ex.: Leite meio-gordo UHT) — todas as marcas, ou uma só.'
+              : 'Escreva pelo menos 2 letras.'}
         </Muted>
       )}
 
@@ -205,12 +250,19 @@ export default function Explorar() {
             </Card>
           )}
 
+          {result.prices && (
+            <Card>
+              <Text style={styles.cardTitle}>Preço {result.prices.basisLabel}{brand ? ` · ${brand}` : ''}</Text>
+              <PriceComparisonView prices={result.prices} name={productName} />
+            </Card>
+          )}
+
           <Card>
             <Segmented
               options={[
                 { value: 'category', label: kind === 'category' ? 'Subcategorias' : 'Categorias' },
                 { value: 'shop', label: 'Lojas' },
-                { value: 'product', label: 'Produtos' },
+                { value: 'product', label: kind === 'product' ? 'Marcas' : 'Produtos' },
               ]}
               value={breakdown}
               onChange={setBreakdown}
@@ -253,6 +305,8 @@ const styles = StyleSheet.create({
   row2: { flexDirection: 'row', gap: space.md },
   col: { flex: 1, gap: 4 },
   error: { color: colors.danger, fontSize: 14 },
+  link: { fontSize: 14, color: colors.accent, fontWeight: '600', paddingVertical: 6 },
+  cardTitle: { fontSize: 16, fontWeight: '600', color: colors.ink },
   caption: { fontSize: 13, color: colors.muted },
   total: { fontSize: 32, fontWeight: '700', color: colors.ink, fontVariant: ['tabular-nums'] },
   stats: { flexDirection: 'row', gap: space.md },

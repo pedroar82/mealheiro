@@ -3,6 +3,7 @@ import { Link, router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { CategoryExpenses } from '@/components/category-expenses';
 import { BarChart, Donut, type Bar, type Slice } from '@/components/charts';
 import { Icon } from '@/components/icon';
 import { MonthSwitcher, useMonth } from '@/components/month-switcher';
@@ -10,10 +11,10 @@ import { RecurringCard } from '@/components/recurring-card';
 import { Screen } from '@/components/screen';
 import { TransactionRow } from '@/components/transaction-row';
 import { Card, Muted, Segmented } from '@/components/ui';
-import { colors, otherSeries, seriesPalette, space } from '@/constants/theme';
-import { rootOf } from '@/lib/categories';
+import { colors, otherSeries, radius, seriesPalette, space } from '@/constants/theme';
+import { childUnder } from '@/lib/categories';
 import { MONTHS_SHORT, WEEKDAYS_SHORT, addDays, formatEUR, fromISO, monthEnd, monthStart, startOfWeek, todayISO } from '@/lib/format';
-import { useAccounts, useCategories, useSpendFacts, useTransactions } from '@/lib/queries';
+import { useAccounts, useCategories, useSpendFacts, useTransactions, useUncategorised } from '@/lib/queries';
 import { supabase } from '@/lib/supabase';
 
 type Period = 'week' | 'month' | 'year';
@@ -66,25 +67,59 @@ export default function Inicio() {
 
   const periodTotal = bars.reduce((s, b) => s + b.cents, 0);
 
-  // Top 4 root categories by spend, the rest folded into "Outras" (fixed colour order).
+  // Top 4 categories by spend at the current level (main categories, or the children of `level`), the rest folded
+  // into "Outras" (fixed colour order). Spending booked on `level` itself shows as "<name> (geral)".
+  const [level, setLevel] = useState<string | null>(null);
+  // selected donut slice (its expenses are listed below); tied to the chart it was picked on, so changing level or
+  // month (the Donut is remounted) clears it
+  const donutKey = `${level}-${month.from}`;
+  const [picked, setPicked] = useState<{ chart: string; key: string | null }>({ chart: '', key: null });
+  const slice = picked.chart === donutKey ? picked.key : null;
   const slices: Slice[] = useMemo(() => {
-    const byRoot = new Map<string, number>();
+    const byKey = new Map<string, number>();
     for (const f of monthFacts) {
-      const root = rootOf(index, f.category_id) ?? 'none';
-      byRoot.set(root, (byRoot.get(root) ?? 0) + f.amount_cents);
+      const under = childUnder(index, f.category_id, level);
+      if (under === undefined) continue;
+      const key = under === null ? 'none' : under === level ? 'self' : under;
+      byKey.set(key, (byKey.get(key) ?? 0) + f.amount_cents);
     }
-    const sorted = [...byRoot.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+    const sorted = [...byKey.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
     const top = sorted.slice(0, 4).map(([id, cents], i) => ({
       key: id,
-      label: id === 'none' ? 'Por categorizar' : index.byId.get(id)?.name ?? '—',
+      label: id === 'none' ? 'Por categorizar' : id === 'self' ? `${index.byId.get(level!)?.name ?? '—'} (geral)` : index.byId.get(id)?.name ?? '—',
       cents,
       color: seriesPalette[i],
     }));
     const rest = sorted.slice(4).reduce((s, [, v]) => s + v, 0);
     return rest > 0 ? [...top, { key: 'other', label: 'Outras', cents: rest, color: otherSeries }] : top;
-  }, [monthFacts, index]);
+  }, [monthFacts, index, level]);
+  const trail = useMemo(() => {
+    const out: { id: string; name: string }[] = [];
+    for (let c = level ? index.byId.get(level) : undefined; c; c = c.parent_id ? index.byId.get(c.parent_id) : undefined) out.unshift({ id: c.id, name: c.name });
+    return out;
+  }, [level, index]);
+  // which categories the selected slice covers (a subtree, the level itself, uncategorised, or "Outras")
+  const sliceMatch = useMemo((): ((c: string | null) => boolean) | null => {
+    if (!slice) return null;
+    const top = new Set(slices.map((s) => s.key));
+    return (c) => {
+      const under = childUnder(index, c, level);
+      if (under === undefined) return false;
+      const key = under === null ? 'none' : under === level ? 'self' : under;
+      return slice === 'other' ? !top.has(key) : key === slice;
+    };
+  }, [slice, slices, index, level]);
+  const sliceLabel = slices.find((s) => s.key === slice)?.label;
+
+  const canDrill = (key: string) => (index.children.get(key) ?? []).some((c) => !c.archived);
+  const openInExplorar = (key: string) => {
+    const id = key === 'self' ? level : key;
+    if (!id || key === 'other' || key === 'none') return;
+    router.push({ pathname: '/explorar', params: { categoria: id, de: month.from, ate: month.to < today ? month.to : today } });
+  };
 
   const recent = (tx.data ?? []).slice(0, 5);
+  const looseTx = useUncategorised().data?.size ?? 0; // all dates, not just this month
   const loading = tx.isLoading || facts.isLoading;
   const pctSpent = income > 0 ? Math.min(100, Math.round((spent / income) * 100)) : null;
 
@@ -119,6 +154,17 @@ export default function Inicio() {
         </View>
       </View>
 
+      {looseTx > 0 && (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push('/sem-categoria')}
+          style={({ pressed }) => [styles.loose, pressed && { opacity: 0.7 }]}>
+          <Text style={styles.looseText}>
+            {looseTx === 1 ? '1 movimento com produtos sem categoria' : `${looseTx} movimentos com produtos sem categoria`} ›
+          </Text>
+        </Pressable>
+      )}
+
       <RecurringCard index={index} />
 
       <Card>
@@ -145,7 +191,46 @@ export default function Inicio() {
           <Text style={styles.cardTitle}>Para onde foi</Text>
           <Link href="/explorar" style={styles.link}>Explorar</Link>
         </View>
-        <Donut slices={slices} centerLabel="Gasto" />
+        {trail.length > 0 && (
+          <View style={styles.trail}>
+            <Pressable accessibilityRole="button" onPress={() => setLevel(null)} hitSlop={6}>
+              <Text style={styles.link}>Todas</Text>
+            </Pressable>
+            {trail.map((t, i) => (
+              <View key={t.id} style={styles.trail}>
+                <Text style={styles.trailSep}>›</Text>
+                {i === trail.length - 1 ? (
+                  <Text style={styles.trailHere}>{t.name}</Text>
+                ) : (
+                  <Pressable accessibilityRole="button" onPress={() => setLevel(t.id)} hitSlop={6}>
+                    <Text style={styles.link}>{t.name}</Text>
+                  </Pressable>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+        <Donut
+          key={donutKey}
+          slices={slices}
+          centerLabel={trail.at(-1)?.name ?? 'Gasto'}
+          canDrill={canDrill}
+          onDrill={setLevel}
+          canOpen={(key) => key !== 'other' && key !== 'none'}
+          onOpen={openInExplorar}
+          onSelect={(key) => setPicked({ chart: donutKey, key })}
+        />
+        {sliceMatch && (
+          <View style={{ gap: space.xs }}>
+            <Text style={styles.cardTitle}>{sliceLabel}</Text>
+            <CategoryExpenses
+              from={month.from}
+              to={month.to < today ? month.to : today}
+              match={sliceMatch}
+              matchKey={`${level}|${slice}|${slices.map((s) => s.key).join()}`}
+            />
+          </View>
+        )}
       </Card>
 
       <Card style={{ gap: 0 }}>
@@ -175,6 +260,11 @@ export default function Inicio() {
 }
 
 const styles = StyleSheet.create({
+  trail: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
+  trailSep: { color: colors.muted, fontSize: 14 },
+  trailHere: { fontSize: 14, fontWeight: '600', color: colors.ink },
+  loose: { backgroundColor: colors.warningSoft, borderRadius: radius.md, padding: space.md },
+  looseText: { color: colors.warning, fontSize: 14, fontWeight: '600' },
   gear: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   error: { color: colors.danger },
   hero: { backgroundColor: colors.ink, borderRadius: 20, padding: 20, gap: space.md },

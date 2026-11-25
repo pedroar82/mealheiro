@@ -447,3 +447,9 @@ note when the period includes history without product detail.
 - 23/11/2026 — Attaching a receipt to an existing movement (bank, Excel, manual) replaces its description with the
   receipt's name (shop name when the merchant is a legal company). Migration `20261123050000_merged_receipt_description.sql`
   fixes movements merged before.
+- 25/11/2026 — Product grouping. Three levels: category (Laticínios e Ovos › Leite = all milks) → product (generic name
+  without brand or size, "Leite meio-gordo UHT", one `products` row) → brand (on the line). Brand and package size
+  (`pack_qty` in kg / l / un) are stored per line. Grouping is automatic (Edge Function `group-products`, run after a
+  receipt is saved, reusing the user's product names) and applies to every itemised receipt, not only supermarkets.
+  Lines with the same printed text share product/brand/size; fixes (Produtos screen, movement screen) apply to all of
+  them and to future receipts. Prices are compared per kg / litre / piece when the size is known, else per package.

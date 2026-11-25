@@ -148,7 +148,7 @@ export default function Digitalizar() {
   if (draft && (stage === 'review' || stage === 'saving')) {
     return (
       <SafeAreaView edges={['top']} style={styles.page}>
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <ScrollView contentContainerStyle={styles.scroll} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
           <Text accessibilityRole="header" style={styles.title}>Rever talão</Text>
           <ReceiptReview key={draft.documentId} targetId={para} initial={draft} index={index} busy={stage === 'saving'} error={error} onSave={save} onDiscard={discard} />
         </ScrollView>

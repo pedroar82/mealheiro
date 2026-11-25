@@ -7,7 +7,7 @@ import { colors, maxContentWidth, space } from '@/constants/theme';
 export function Screen({ title, action, children }: PropsWithChildren<{ title: string; action?: ReactNode }>) {
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={styles.scroll} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
         <View style={styles.inner}>
           <View style={styles.titleRow}>
             <Text accessibilityRole="header" style={styles.title}>{title}</Text>

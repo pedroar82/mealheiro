@@ -4,6 +4,7 @@
 import { categoryPath, type CategoryIndex } from '@/lib/categories';
 import { normDesc } from '@/lib/cgd-import';
 import { addDays, todayISO } from '@/lib/format';
+import { groupTransaction } from '@/lib/products';
 import { supabase } from '@/lib/supabase';
 import type { SplitMode } from '@/lib/types';
 
@@ -374,7 +375,10 @@ export async function saveDraft(d: Draft, storagePath: string | null, mergeInto?
   const unique = [...new Map(learned.map((r) => [r.pattern, r])).values()];
   if (unique.length) await run(supabase.from('rules').upsert(unique, { onConflict: 'user_id,scope,match,pattern' }));
 
-  // 5. the image/PDF is not kept (decision 19/11/2026)
+  // 5. products: grouped in the background (Edge Function group-products); a failure leaves them for Produtos to retry
+  void groupTransaction(tx.id);
+
+  // 6. the image/PDF is not kept (decision 19/11/2026)
   if (storagePath) await supabase.storage.from('uploads').remove([storagePath]);
   await must(supabase.from('documents').update({ status: 'done', storage_path: null }).eq('id', d.documentId).select('id'));
   return tx.id;

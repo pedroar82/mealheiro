@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type GestureResponderEvent, type LayoutChangeEvent } from 'react-native';
 import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
 
 import { chartColors, colors, space } from '@/constants/theme';
@@ -75,7 +75,35 @@ export function BarChart({ bars, height = 150, label }: { bars: Bar[]; height?: 
 // ---------------------------------------------------------------------------
 export type Slice = { key: string; label: string; cents: number; color: string };
 
-export function Donut({ slices, size = 150, centerLabel }: { slices: Slice[]; size?: number; centerLabel: string }) {
+/**
+ * Donut with a legend. Tap a segment or a legend row to select it (again to clear): the centre shows its amount and %,
+ * the others fade, and the actions below let the parent drill into it or open it elsewhere.
+ */
+export function Donut({
+  slices,
+  size = 150,
+  centerLabel,
+  canDrill,
+  onDrill,
+  canOpen,
+  onOpen,
+  onSelect,
+}: {
+  slices: Slice[];
+  size?: number;
+  centerLabel: string;
+  canDrill?: (key: string) => boolean;
+  onDrill?: (key: string) => void;
+  canOpen?: (key: string) => boolean;
+  onOpen?: (key: string) => void;
+  onSelect?: (key: string | null) => void; // the parent shows what is behind the selected slice
+}) {
+  const [sel, setSelState] = useState<string | null>(null);
+  const setSel = (next: string | null | ((k: string | null) => string | null)) => {
+    const v = typeof next === 'function' ? next(sel) : next;
+    setSelState(v);
+    if (v !== sel) onSelect?.(v);
+  };
   const total = slices.reduce((s, x) => s + x.cents, 0);
   const stroke = 20;
   const r = (size - stroke) / 2;
@@ -83,50 +111,115 @@ export function Donut({ slices, size = 150, centerLabel }: { slices: Slice[]; si
   const gap = slices.length > 1 ? 2 : 0; // 2px surface gap between segments
   const lengths = slices.map((s) => (total > 0 ? (s.cents / total) * c : 0));
   const offsets = lengths.map((_, i) => lengths.slice(0, i).reduce((a, b) => a + b, 0));
+  const selected = slices.find((s) => s.key === sel) ?? null;
+  const pct = (cents: number) => (total > 0 ? Math.round((cents / total) * 100) : 0);
+  const toggle = (key: string) => setSel((k) => (k === key ? null : key));
+
+  // which segment was touched: angle from 12 o'clock, clockwise (segments are drawn the same way)
+  const touch = (e: GestureResponderEvent) => {
+    // native: locationX/Y; web: a mouse event may only carry offsetX/Y
+    const ne = e.nativeEvent as { locationX?: number; locationY?: number; offsetX?: number; offsetY?: number };
+    const x = ne.locationX ?? ne.offsetX;
+    const y = ne.locationY ?? ne.offsetY;
+    if (x == null || y == null) return;
+    const dx = x - size / 2;
+    const dy = y - size / 2;
+    const dist = Math.hypot(dx, dy);
+    if (dist < r - stroke / 2 - 8 || dist > r + stroke / 2 + 8) return; // the hole or outside the ring
+    let a = Math.atan2(dx, -dy);
+    if (a < 0) a += 2 * Math.PI;
+    const at = (a / (2 * Math.PI)) * c;
+    const i = offsets.findIndex((o, j) => at >= o && at < o + lengths[j]);
+    if (i >= 0) toggle(slices[i].key);
+  };
 
   return (
-    <View style={styles.donutRow}>
-      <View style={{ width: size, height: size }}>
-        {/* decorative: the legend carries the data. aria-hidden on a View, not on Svg (which forwards props to the DOM on web) */}
-        <View aria-hidden>
-        <Svg width={size} height={size}>
-            {total === 0 && <Circle cx={size / 2} cy={size / 2} r={r} stroke={colors.border} strokeWidth={stroke} fill="none" />}
-            {slices.map((s, i) => {
-              const dash = Math.max(0, lengths[i] - gap);
-              return (
-                <Circle
-                  key={s.key}
-                  cx={size / 2}
-                  cy={size / 2}
-                  r={r}
-                  stroke={s.color}
-                  strokeWidth={stroke}
-                  fill="none"
-                  strokeDasharray={`${dash} ${c - dash}`}
-                  // circle strokes start at 3 o'clock; +c/4 starts the first segment at 12 o'clock
-                  // (instead of a <G rotation>, whose origin prop leaks as `transform-origin` on web)
-                  strokeDashoffset={c / 4 - offsets[i]}
-                />
-              );
-            })}
-        </Svg>
-        </View>
-        <View style={[StyleSheet.absoluteFill, styles.center]}>
-          <Text style={styles.centerSmall}>{centerLabel}</Text>
-          <Text style={styles.centerBig}>{formatEUR(total, { decimals: false })}</Text>
+    <View style={{ gap: space.md }}>
+      <View style={styles.donutRow}>
+        <Pressable
+          accessibilityLabel="Gráfico circular das despesas (a legenda tem os valores)"
+          onPress={touch}
+          style={{ width: size, height: size }}>
+          {/* aria-hidden on a View, not on Svg (which forwards props to the DOM on web) */}
+          <View aria-hidden pointerEvents="none">
+            <Svg width={size} height={size}>
+              {total === 0 && <Circle cx={size / 2} cy={size / 2} r={r} stroke={colors.border} strokeWidth={stroke} fill="none" />}
+              {slices.map((s, i) => {
+                const dash = Math.max(0, lengths[i] - gap);
+                const on = s.key === sel;
+                return (
+                  <Circle
+                    key={s.key}
+                    cx={size / 2}
+                    cy={size / 2}
+                    r={r}
+                    stroke={s.color}
+                    strokeWidth={on ? stroke + 6 : stroke}
+                    strokeOpacity={sel && !on ? 0.3 : 1}
+                    fill="none"
+                    strokeDasharray={`${dash} ${c - dash}`}
+                    // circle strokes start at 3 o'clock; +c/4 starts the first segment at 12 o'clock
+                    // (instead of a <G rotation>, whose origin prop leaks as `transform-origin` on web)
+                    strokeDashoffset={c / 4 - offsets[i]}
+                  />
+                );
+              })}
+            </Svg>
+          </View>
+          <View style={[StyleSheet.absoluteFill, styles.center]} pointerEvents="none">
+            {selected ? (
+              <>
+                <Text style={[styles.centerSmall, { maxWidth: size - 2 * stroke - 12, textAlign: 'center' }]} numberOfLines={2}>
+                  {selected.label}
+                </Text>
+                <Text style={styles.centerBig}>{formatEUR(selected.cents, { decimals: false })}</Text>
+                <Text style={styles.centerSmall}>{pct(selected.cents)}%</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.centerSmall}>{centerLabel}</Text>
+                <Text style={styles.centerBig}>{formatEUR(total, { decimals: false })}</Text>
+              </>
+            )}
+          </View>
+        </Pressable>
+        <View style={styles.legend}>
+          {slices.length === 0 && <Text style={styles.legendText}>Sem despesas</Text>}
+          {slices.map((s) => {
+            const on = s.key === sel;
+            return (
+              <Pressable
+                key={s.key}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={`${s.label}: ${formatEUR(s.cents)}, ${pct(s.cents)}%`}
+                onPress={() => toggle(s.key)}
+                style={[styles.legendRow, sel && !on && { opacity: 0.45 }]}>
+                <View style={[styles.swatch, { backgroundColor: s.color }]} />
+                <Text style={[styles.legendText, on && { fontWeight: '700' }]} numberOfLines={1}>
+                  {s.label}
+                </Text>
+                <Text style={styles.legendPct}>{pct(s.cents)}%</Text>
+                <Text style={styles.legendAmount}>{formatEUR(s.cents)}</Text>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
-      <View style={styles.legend}>
-        {slices.length === 0 && <Text style={styles.legendText}>Sem despesas</Text>}
-        {slices.map((s) => (
-          <Pressable key={s.key} accessible accessibilityLabel={`${s.label}: ${formatEUR(s.cents)}, ${Math.round((s.cents / total) * 100)}%`} style={styles.legendRow}>
-            <View style={[styles.swatch, { backgroundColor: s.color }]} />
-            <Text style={styles.legendText} numberOfLines={1}>{s.label}</Text>
-            <Text style={styles.legendPct}>{Math.round((s.cents / total) * 100)}%</Text>
-            <Text style={styles.legendAmount}>{formatEUR(s.cents)}</Text>
-          </Pressable>
-        ))}
-      </View>
+      {selected && ((onDrill && canDrill?.(selected.key)) || (onOpen && (canOpen?.(selected.key) ?? true))) && (
+        <View style={styles.donutActions}>
+          {onDrill && canDrill?.(selected.key) && (
+            <Pressable accessibilityRole="button" onPress={() => (setSel(null), onDrill(selected.key))} style={styles.donutAction}>
+              <Text style={styles.donutActionText}>Ver subcategorias ›</Text>
+            </Pressable>
+          )}
+          {onOpen && (canOpen?.(selected.key) ?? true) && (
+            <Pressable accessibilityRole="button" onPress={() => onOpen(selected.key)} style={styles.donutAction}>
+              <Text style={styles.donutActionText}>Abrir no Explorar ›</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -266,6 +359,9 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
   centerSmall: { fontSize: 11, color: colors.muted },
   centerBig: { fontSize: 17, fontWeight: '700', color: colors.ink },
+  donutActions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  donutAction: { minHeight: 40, paddingHorizontal: space.md, borderRadius: 10, backgroundColor: colors.accentSoft, justifyContent: 'center' },
+  donutActionText: { fontSize: 14, fontWeight: '600', color: colors.accent },
   legend: { flex: 1, minWidth: 160, gap: space.sm },
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 24 },
   swatch: { width: 10, height: 10, borderRadius: 3 },

@@ -200,7 +200,7 @@ export default function ImportarPartilhadas() {
   }
 
   return (
-    <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic">
+    <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic" automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
       <View style={styles.inner}>
         <Card>
           <Muted>

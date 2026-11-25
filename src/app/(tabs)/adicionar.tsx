@@ -70,6 +70,9 @@ export default function Adicionar() {
       </Link>
       {Platform.OS === 'web' && (
         <View>
+          <Link href="/importar-faturas" style={styles.importLink}>
+            Importar várias faturas (PDF) ›
+          </Link>
           <Link href="/importar-extrato" style={styles.importLink}>
             Importar extrato CGD (CSV) ›
           </Link>

@@ -3,7 +3,7 @@
 
 import { rootOf, type CategoryIndex } from '@/lib/categories';
 import { normDesc } from '@/lib/cgd-import';
-import type { ExploreData, Line } from '@/lib/explore';
+import { comparePrices, productKeyOf, productLabel, type ExploreData, type PriceComparison } from '@/lib/explore';
 import { MONTHS_SHORT } from '@/lib/format';
 
 export type Income = { date: string; amount_cents: number };
@@ -62,12 +62,15 @@ export function monthRoots(d: ExploreData, idx: CategoryIndex, month: string): A
 
 export type Focus = { total: number; previous: number; change: number | null; subs: Amount[]; shops: Amount[] };
 
-/** One top-level category in a month: subcategories, shops, change vs the previous month. */
-export function focus(d: ExploreData, idx: CategoryIndex, rootId: string | null, month: string, prevMonth: string): Focus {
+/**
+ * One top-level category in a month: subcategories, shops, change vs the previous month. `prevTo` (inclusive date)
+ * limits the previous month to the same days when the month is still running (1–25 Nov vs 1–25 Oct).
+ */
+export function focus(d: ExploreData, idx: CategoryIndex, rootId: string | null, month: string, prevMonth: string, prevTo?: string): Focus {
   const inRoot = (cat: string | null) => rootOf(idx, cat) === rootId;
   const facts = d.facts.filter((f) => monthKey(f.date) === month && inRoot(f.category_id));
   const total = facts.reduce((s, f) => s + f.amount_cents, 0);
-  const previous = d.facts.filter((f) => monthKey(f.date) === prevMonth && inRoot(f.category_id)).reduce((s, f) => s + f.amount_cents, 0);
+  const previous = d.facts.filter((f) => monthKey(f.date) === prevMonth && (!prevTo || f.date <= prevTo) && inRoot(f.category_id)).reduce((s, f) => s + f.amount_cents, 0);
 
   const childOf = (cat: string | null): string | null => {
     let cur = cat ? idx.byId.get(cat) : undefined;
@@ -96,40 +99,40 @@ export function focus(d: ExploreData, idx: CategoryIndex, rootId: string | null,
   return { total, previous, change: previous > 0 ? (total - previous) / previous : null, subs, shops };
 }
 
-/** Same product across receipts: the readable name, normalised. */
-export const productKey = (l: Pick<Line, 'name'>) => normDesc(l.name);
+/** Same product across receipts: its product group (or, not grouped yet, the readable name). */
+export const productKey = productKeyOf;
 
-export type TopProduct = { key: string; name: string; purchases: number; cents: number; categoryId: string | null };
+/** maxPrice: the highest price paid for one item (per package; per kg line = the whole weighed amount). */
+export type TopProduct = { key: string; name: string; purchases: number; cents: number; maxPrice: number; categoryId: string | null };
+/** count = most bought (separate purchases), spent = most money, price = most expensive item. */
+export type TopMode = 'count' | 'spent' | 'price';
 
-export function topProducts(d: ExploreData, month: string, n = 5): TopProduct[] {
+export function topProducts(d: ExploreData, month: string, n = 5, mode: TopMode = 'count'): TopProduct[] {
   const m = new Map<string, TopProduct & { txs: Set<string> }>();
   for (const l of d.lines) {
     if (monthKey(l.date) !== month || l.total_cents <= 0) continue;
     const key = productKey(l);
-    const e = m.get(key) ?? { key, name: l.name, purchases: 0, cents: 0, categoryId: l.category_id, txs: new Set<string>() };
+    const e = m.get(key) ?? { key, name: productLabel(d, l), purchases: 0, cents: 0, maxPrice: 0, categoryId: l.category_id, txs: new Set<string>() };
     e.cents += l.my_cents; // the user's part (a split bill counts only their share)
+    const per = l.unit !== 'kg' && l.quantity && l.quantity > 1 ? Math.round(l.total_cents / l.quantity) : l.total_cents;
+    e.maxPrice = Math.max(e.maxPrice, per);
     e.txs.add(l.transaction_id);
     m.set(key, e);
   }
+  const order: Record<TopMode, (a: TopProduct, b: TopProduct) => number> = {
+    count: (a, b) => b.purchases - a.purchases || b.cents - a.cents,
+    spent: (a, b) => b.cents - a.cents,
+    price: (a, b) => b.maxPrice - a.maxPrice,
+  };
   return [...m.values()]
     .map(({ txs, ...p }) => ({ ...p, purchases: txs.size }))
-    .sort((a, b) => b.purchases - a.purchases || b.cents - a.cents)
+    .sort(order[mode])
     .slice(0, n);
 }
 
-export type PricePoint = { date: string; cents: number; store: string | null; perKg: boolean };
-
-/** Unit price of a product at each purchase (per kg for weighed items), oldest first. */
-export function priceHistory(d: ExploreData, key: string): PricePoint[] {
-  return d.lines
-    .filter((l) => productKey(l) === key && l.total_cents > 0)
-    .map((l) => {
-      const perKg = l.unit === 'kg';
-      const cents = l.unit_price_cents ?? (l.quantity && l.quantity > 0 ? Math.round(l.total_cents / l.quantity) : l.total_cents);
-      const store = l.store_id ? (d.stores.get(l.store_id)?.name ?? null) : null;
-      return { date: l.date, cents, store, perKg };
-    })
-    .sort((a, b) => a.date.localeCompare(b.date));
+/** Comparable unit prices of a product (per kg / litre / piece / package), oldest first, with prices by shop. */
+export function priceHistory(d: ExploreData, key: string): PriceComparison | null {
+  return comparePrices(d, d.lines.filter((l) => productKey(l) === key));
 }
 
 /** Product with the most separate purchases (≥ 2), for the default price chart. */
@@ -137,7 +140,7 @@ export function mostRepeated(d: ExploreData): { key: string; name: string } | nu
   const m = new Map<string, { name: string; txs: Set<string> }>();
   for (const l of d.lines) {
     if (l.total_cents <= 0) continue;
-    const e = m.get(productKey(l)) ?? { name: l.name, txs: new Set<string>() };
+    const e = m.get(productKey(l)) ?? { name: productLabel(d, l), txs: new Set<string>() };
     e.txs.add(l.transaction_id);
     m.set(productKey(l), e);
   }

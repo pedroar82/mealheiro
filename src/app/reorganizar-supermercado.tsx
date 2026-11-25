@@ -155,7 +155,7 @@ export default function ReorganizarSupermercado() {
   if (isLoading || items.isLoading) return <ActivityIndicator style={{ marginTop: space.xl }} />;
 
   return (
-    <ScrollView style={styles.page} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic">
+    <ScrollView style={styles.page} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic" automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
       <View style={styles.inner}>
         {items.error && <Text style={styles.error}>{items.error.message}</Text>}
         {saved != null && (

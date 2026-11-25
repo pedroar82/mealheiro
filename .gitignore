@@ -59,3 +59,5 @@ supabase/.branches/
 /previous_facturas/
 /*.zip
 /*.pdf
+/old_facturas_test/
+/previous_facturas_lidl/

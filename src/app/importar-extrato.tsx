@@ -334,7 +334,7 @@ export default function ImportarExtrato() {
   const visibleLinks = showLinks ? linkRows : needsLook;
 
   return (
-    <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic">
+    <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic" automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
       <View style={styles.inner}>
         <Card>
           <Text style={styles.h2}>Extrato CGD (CSV)</Text>

@@ -103,10 +103,46 @@ Last updated: 23/11/2026. Read with `docs/SPEC.md` (requirements, data model, de
 - Local backup branches `backup-before-email-rewrite`, `backup-before-scrub` hold the old history (never pushed;
   can be deleted).
 
+## 23/11/2026 — Bulk invoice import (uncommitted, awaiting test)
+- `src/app/importar-faturas.tsx` (web; Adicionar › "Importar várias faturas (PDF)"), `pickFiles` in `import-io.ts`.
+  Many PDFs → read 2 at a time (`uploadAndExtract`) → duplicates (NIF + nº documento) discarded automatically →
+  list with date/shop/total/lines/uncategorised/line-sum mismatch/seconds per file and the proposed action (new / merge).
+  Full review: every invoice opens in `ReceiptReview`, save or discard, then the next one opens. Leaving the screen discards
+  unsaved drafts; closing the tab warns. Test set: `old_facturas_test/` (2 Continente PDFs, 2023 and 2026).
+  Tested by the user 23/11/2026: works; one product came without a category → signalling below.
+- 23/11/2026 Products without category are signalled (uncommitted, awaiting test): `useUncategorised` (line_items with
+  no category and total > 0, by movement; under the 'transactions' query key). Orange "N produtos sem categoria" on
+  movement rows, Início notice → new `src/app/sem-categoria.tsx` (all dates), orange product on the movement screen.
+  The "Por categorizar" filter uses the live lines instead of `transactions.needs_review` (which was never cleared).
+- 24/11/2026 iPhone fixes (uncommitted, awaiting test in Expo Go): category picker "Fechar" was under the status bar —
+  insets read outside the `Modal` and applied as padding (inside a Modal they come back 0; same fix as the camera).
+  Keyboard covering fields: every `ScrollView` has `automaticallyAdjustKeyboardInsets` (iOS, RN core; works in Expo Go —
+  react-native-keyboard-controller would need a dev build). New ScrollViews/Modals must do the same.
+- 24/11/2026 Analysis round 1 (uncommitted, awaiting test): period picker in `month-switcher.tsx` — tap the month title:
+  month grid by year (Início + Movimentos) or "Personalizado" day-range calendar with presets (Movimentos, `usePeriod`).
+  Interactive `Donut`: tap segment/legend → highlight + amount/% in the centre; "Ver subcategorias" drills down
+  (`childUnder` in categories.ts, breadcrumb on Início); "Abrir no Explorar" passes `categoria/de/ate` params.
+  Bug fixed 24/11/2026: Início totals too low (e.g. restaurants in November) — `useSpendFacts` read 12 months of
+  line-level facts in one request and the Data API cut it at 1000 rows. Now paged with `fetchAll` (as Explorar);
+  `useTransactions` paged too (long custom periods). Any new list query must page.
+- 25/11/2026 Product grouping (uncommitted, awaiting test; migration `20261125000000_product_grouping.sql` (first run failed on an existing index; fixed, to re-run),
+  new Edge Function `group-products` deployed 25/11/2026). Design agreed 25/11 (SPEC §11). `src/lib/products.ts` (groupLines:
+  same printed text already grouped → copied, rest → model in batches of 150; unit prices; fixes), `src/app/produtos.tsx`
+  (Definições › Categorias › Ver produtos: "Agrupar agora" for old lines, rename/merge, per printed text: brand, size,
+  move), `src/components/product-picker.tsx`, product field on movement lines, Explorar › Produto = pick a product +
+  brand chips + price per kg/l/un by shop (`comparePrices`), Análise price chart uses product groups.
+  `saveDraft` groups in the background (not awaited; the movement screen shows it on the next refresh).
+
 ## Next
-1. **Import old invoices in bulk**: `previous_facturas/` (≈100 PDFs, e.g. `Fatura_Cartao_Continente_<date>_<time>.pdf`,
+1. **Import old invoices in bulk** (screen built, see above — test with `old_facturas_test/`, then adjust): `previous_facturas/` (≈100 PDFs, e.g. `Fatura_Cartao_Continente_<date>_<time>.pdf`,
    from 2023 on) and `previous_facturas_lidl.zip` (git-ignored, local only). Discuss first: a web screen that takes many
    PDFs at once, runs each through `extract-receipt`, matches existing movements (Excel history / CGD lines, ±3 days,
    same amount) and offers a batch review; duplicates already stopped by seller NIF + document number. Cost/time per
    file and whether to skip the per-receipt review for high-confidence ones are open points.
 2. Then: e-Fatura import, other banks/cards (open question 3), email inbox, offline cache.
+- 25/11/2026 Analysis round 2 (uncommitted, awaiting test): Análise category badge "+11% que em 1–25 out" (a running month
+  is compared with the same days of the previous month; past months whole: "que em outubro"; `focus(..., prevTo)`).
+  Subcategory rows are tappable → `src/components/category-expenses.tsx` (movements with the part in the category +
+  products of those receipts; Despesas / Produtos), plus "Ver todas as despesas". Products card: Mais comprados /
+  Mais gasto / Mais caros (highest price paid for one item; `topProducts(..., mode)`). Início: tapping a donut slice
+  lists the same expenses/products under the chart (`Donut onSelect`; "Outras" = the categories outside the top 4).

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radius, space } from '@/constants/theme';
 import { categoryPath, type CategoryIndex } from '@/lib/categories';
@@ -31,6 +31,8 @@ export function CategoryPicker({
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const create = useCreateCategory();
+  // read outside the Modal: inside it the insets come back as 0 and "Fechar" ends up under the status bar
+  const insets = useSafeAreaInsets();
 
   const childrenOf = (id: string | null) => (index.children.get(id) ?? []).filter((c) => c.kind === kind && !c.archived);
   const current = at ? index.byId.get(at) : undefined;
@@ -81,7 +83,7 @@ export function CategoryPicker({
       </Pressable>
 
       <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
-        <SafeAreaView style={styles.sheet}>
+        <View style={[styles.sheet, { paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }]}>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Escolher categoria</Text>
             <Pressable accessibilityRole="button" onPress={() => setOpen(false)} style={styles.close}>
@@ -100,7 +102,7 @@ export function CategoryPicker({
             accessibilityLabel="Procurar categoria"
           />
 
-          <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+          <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
             {results ? (
               <View style={styles.group}>
                 {results.length === 0 && <Text style={styles.empty}>Nenhuma categoria com “{query.trim()}”.</Text>}
@@ -178,7 +180,7 @@ export function CategoryPicker({
               <Text style={styles.noneText}>Por categorizar</Text>
             </Pressable>
           </ScrollView>
-        </SafeAreaView>
+        </View>
       </Modal>
     </>
   );

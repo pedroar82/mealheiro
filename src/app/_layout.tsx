@@ -27,10 +27,13 @@ function RootNavigator() {
         <Stack.Screen name="importar-excel" options={{ headerShown: true, title: 'Importar Excel', headerBackTitle: 'Voltar' }} />
         <Stack.Screen name="digitalizar" options={{ presentation: 'fullScreenModal', headerShown: false }} />
         <Stack.Screen name="importar-documento" options={{ headerShown: true, title: 'Talão ou fatura', headerBackTitle: 'Voltar' }} />
+        <Stack.Screen name="importar-faturas" options={{ headerShown: true, title: 'Importar faturas', headerBackTitle: 'Voltar' }} />
         <Stack.Screen name="importar-extrato" options={{ headerShown: true, title: 'Importar extrato', headerBackTitle: 'Voltar' }} />
         <Stack.Screen name="definicoes" options={{ headerShown: true, title: 'Definições', headerBackTitle: 'Voltar' }} />
+        <Stack.Screen name="sem-categoria" options={{ headerShown: true, title: 'Produtos sem categoria', headerBackTitle: 'Voltar' }} />
         <Stack.Screen name="sem-talao" options={{ headerShown: true, title: 'Compras sem talão', headerBackTitle: 'Voltar' }} />
         <Stack.Screen name="reorganizar-supermercado" options={{ headerShown: true, title: 'Reorganizar produtos', headerBackTitle: 'Voltar' }} />
+        <Stack.Screen name="produtos" options={{ headerShown: true, title: 'Produtos', headerBackTitle: 'Voltar' }} />
         <Stack.Screen name="importar-partilhadas" options={{ headerShown: true, title: 'Contas da casa', headerBackTitle: 'Voltar' }} />
       </Stack.Protected>
       <Stack.Protected guard={!session}>

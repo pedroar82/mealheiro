@@ -12,6 +12,19 @@ export function pickFile(accept: string): Promise<File | null> {
   });
 }
 
+/** Same, choosing several files at once (empty if cancelled). */
+export function pickFiles(accept: string): Promise<File[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.multiple = true;
+    input.onchange = () => resolve(Array.from(input.files ?? []));
+    input.addEventListener('cancel', () => resolve([]));
+    input.click();
+  });
+}
+
 export function chunks<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));

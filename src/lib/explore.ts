@@ -5,6 +5,7 @@ import { categoryPath, rootOf, type CategoryIndex } from '@/lib/categories';
 import { normDesc } from '@/lib/cgd-import';
 import { MONTHS_SHORT, addDays, todayISO } from '@/lib/format';
 import { fetchAll } from '@/lib/import-io';
+import { BASIS_LABEL, loadProducts, mainBasis, unitPrice, type PackUnit, type PriceBasis } from '@/lib/products';
 import { supabase } from '@/lib/supabase';
 
 export type Fact = { date: string; amount_cents: number; category_id: string | null; merchant_id: string | null; store_id: string | null; source: string; transaction_id: string };
@@ -23,21 +24,32 @@ export type Line = {
   unit_price_cents: number | null;
   date: string;
   store_id: string | null;
+  product_id: string | null;
+  brand: string | null;
+  pack_qty: number | null;
+  pack_unit: PackUnit | null;
 };
 
-export type ExploreData = { facts: Fact[]; tx: Map<string, TxInfo>; stores: Map<string, Store>; merchants: Map<string, Merchant>; lines: Line[] };
+export type ExploreData = {
+  facts: Fact[];
+  tx: Map<string, TxInfo>;
+  stores: Map<string, Store>;
+  merchants: Map<string, Merchant>;
+  lines: Line[];
+  products: Map<string, string>; // id → name
+};
 
 export type Target =
   | { type: 'category'; id: string }
   | { type: 'group'; members: string[] } // category group: each member with its subcategories
   | { type: 'shop'; q: string }
   | { type: 'place'; q: string }
-  | { type: 'product'; q: string };
+  | { type: 'product'; id: string; brand: string | null }; // brand null = every brand
 
 export const EVER_FROM = '2000-01-01';
 
 export async function loadExploreData(from: string, to: string): Promise<ExploreData> {
-  const [facts, tx, stores, merchants, lines] = await Promise.all([
+  const [facts, tx, stores, merchants, lines, products] = await Promise.all([
     fetchAll<Fact>((a, b) =>
       supabase
         .from('spend_facts')
@@ -61,12 +73,13 @@ export async function loadExploreData(from: string, to: string): Promise<Explore
     fetchAll<Line>((a, b) =>
       supabase
         .from('line_facts')
-        .select('transaction_id, name, raw_text, total_cents, my_cents, category_id, quantity, unit, unit_price_cents, date, store_id')
+        .select('transaction_id, name, raw_text, total_cents, my_cents, category_id, quantity, unit, unit_price_cents, date, store_id, product_id, brand, pack_qty, pack_unit')
         .gte('date', from)
         .lte('date', to)
         .order('id')
         .range(a, b),
     ),
+    loadProducts(),
   ]);
   return {
     facts,
@@ -74,8 +87,16 @@ export async function loadExploreData(from: string, to: string): Promise<Explore
     stores: new Map(stores.map((s) => [s.id, s])),
     merchants: new Map(merchants.map((m) => [m.id, m])),
     lines,
+    products: new Map(products.map((p) => [p.id, p.name])),
   };
 }
+
+/** Product of a line: its group, or (not grouped yet) its readable name. */
+export const productKeyOf = (l: Pick<Line, 'product_id' | 'name'>) => l.product_id ?? `n:${normDesc(l.name)}`;
+export const productLabel = (d: ExploreData, l: Pick<Line, 'product_id' | 'name'>) => (l.product_id && d.products.get(l.product_id)) || l.name;
+
+const lineMatches = (target: Extract<Target, { type: 'product' }>, l: Line) =>
+  l.product_id === target.id && (!target.brand || l.brand === target.brand);
 
 /** Category id and all its descendants. */
 export function subtree(idx: CategoryIndex, id: string): Set<string> {
@@ -105,7 +126,8 @@ export type Result = {
   series: { key: string; label: string; cents: number }[];
   byCategory: Row[];
   byShop: Row[];
-  byProduct: Row[];
+  byProduct: Row[]; // for a product target: by brand
+  prices: PriceComparison | null; // product target only
   noDetailShare: number; // part of the total without product detail (Excel, bank, manual)
   matchedByText: number; // purchases found by description only (history without shop data)
   first: string | null;
@@ -115,6 +137,7 @@ const ITEMIZED = new Set(['receipt', 'pdf']);
 
 export function explore(d: ExploreData, idx: CategoryIndex, target: Target, from: string, to: string): Result {
   const q = 'q' in target ? normDesc(target.q.trim()) : '';
+  const productTarget = target.type === 'product' ? target : null;
   const cats =
     target.type === 'category' ? subtree(idx, target.id)
     : target.type === 'group' ? new Set(target.members.flatMap((m) => [...subtree(idx, m)]))
@@ -126,14 +149,12 @@ export function explore(d: ExploreData, idx: CategoryIndex, target: Target, from
   let facts: Fact[];
   if (target.type === 'product') {
     const factOf = new Map(d.facts.map((x) => [x.transaction_id, x]));
-    facts = q
-      ? d.lines
-          .filter((l) => has(l.name, q) || has(l.raw_text, q))
+    facts = d.lines
+          .filter((l) => lineMatches(productTarget!, l))
           .map((l) => {
             const f = factOf.get(l.transaction_id);
             return { date: l.date, amount_cents: l.my_cents, category_id: l.category_id, merchant_id: f?.merchant_id ?? null, store_id: f?.store_id ?? null, source: 'receipt', transaction_id: l.transaction_id };
-          })
-      : [];
+          });
   } else {
     facts = d.facts.filter((f) => {
       if (cats) return !!f.category_id && cats.has(f.category_id);
@@ -227,11 +248,12 @@ export function explore(d: ExploreData, idx: CategoryIndex, target: Target, from
   );
 
   const matchedTx = new Set(facts.map((f) => f.transaction_id));
-  const productLines =
-    target.type === 'product'
-      ? d.lines.filter((l) => has(l.name, q) || has(l.raw_text, q))
-      : d.lines.filter((l) => matchedTx.has(l.transaction_id) && (!cats || (l.category_id && cats.has(l.category_id))));
-  const byProduct = group(productLines.map((l) => ({ key: normDesc(l.name), label: l.name, cents: l.my_cents, tx: l.transaction_id })));
+  const productLines = productTarget
+    ? d.lines.filter((l) => lineMatches(productTarget, l))
+    : d.lines.filter((l) => matchedTx.has(l.transaction_id) && (!cats || (l.category_id && cats.has(l.category_id))));
+  const byProduct = productTarget
+    ? group(productLines.map((l) => ({ key: l.brand ? normDesc(l.brand) : '-', label: l.brand ?? 'Sem marca', cents: l.my_cents, tx: l.transaction_id })))
+    : group(productLines.map((l) => ({ key: productKeyOf(l), label: productLabel(d, l), cents: l.my_cents, tx: l.transaction_id })));
 
   const noDetail = facts.filter((f) => !ITEMIZED.has(f.source)).reduce((s, f) => s + f.amount_cents, 0);
 
@@ -245,6 +267,7 @@ export function explore(d: ExploreData, idx: CategoryIndex, target: Target, from
     byCategory,
     byShop,
     byProduct,
+    prices: productTarget ? comparePrices(d, productLines) : null,
     noDetailShare: total > 0 ? Math.max(0, noDetail / total) : 0,
     matchedByText,
     first,
@@ -258,4 +281,50 @@ function cleanDescription(s: string | null): string | null {
   const t = s?.trim();
   if (!t) return null;
   return t.length > 28 ? `${t.slice(0, 27)}…` : t;
+}
+
+export type PricePoint = { date: string; cents: number; store: string | null; brand: string | null };
+export type ShopPrice = { label: string; avg: number; min: number; last: number; lastDate: string; count: number };
+export type PriceComparison = { basis: PriceBasis; basisLabel: string; points: PricePoint[]; byShop: ShopPrice[]; skipped: number };
+
+/** Shop name of a line (store, else merchant of its movement, else description). */
+export function lineShop(d: ExploreData, l: Line, merchantOf?: Map<string, string | null>): string | null {
+  const merchantId = merchantOf ? merchantOf.get(l.transaction_id) : d.facts.find((x) => x.transaction_id === l.transaction_id)?.merchant_id;
+  const s = l.store_id ? d.stores.get(l.store_id) : undefined;
+  const m = merchantId ? d.merchants.get(merchantId) : undefined;
+  return m?.name ?? s?.name ?? cleanDescription(d.tx.get(l.transaction_id)?.description ?? null);
+}
+
+/**
+ * Unit prices of these lines on one comparable basis (per kg / litre / piece / package — the one most purchases have),
+ * oldest first, plus average / cheapest / last price by shop (cheapest average first).
+ */
+export function comparePrices(d: ExploreData, lines: Line[]): PriceComparison | null {
+  const priced = lines.flatMap((l) => {
+    const p = unitPrice(l);
+    return p ? [{ l, ...p }] : [];
+  });
+  const basis = mainBasis(priced);
+  if (!basis) return null;
+  const same = priced.filter((p) => p.basis === basis);
+  const merchantOf = new Map(d.facts.map((f) => [f.transaction_id, f.merchant_id]));
+  const points = same
+    .map((p) => ({ date: p.l.date, cents: p.cents, store: lineShop(d, p.l, merchantOf), brand: p.l.brand }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const by = new Map<string, PricePoint[]>();
+  for (const p of points) {
+    const k = p.store ?? 'Sem loja';
+    by.set(k, [...(by.get(k) ?? []), p]);
+  }
+  const byShop = [...by.entries()]
+    .map(([label, ps]) => ({
+      label,
+      avg: Math.round(ps.reduce((s, p) => s + p.cents, 0) / ps.length),
+      min: Math.min(...ps.map((p) => p.cents)),
+      last: ps[ps.length - 1].cents,
+      lastDate: ps[ps.length - 1].date,
+      count: ps.length,
+    }))
+    .sort((a, b) => a.avg - b.avg);
+  return { basis, basisLabel: BASIS_LABEL[basis], points, byShop, skipped: priced.length - same.length };
 }

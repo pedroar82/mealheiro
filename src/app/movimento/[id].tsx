@@ -5,15 +5,17 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 
 import { SharedCard } from '@/components/shared-card';
 import { CategoryPicker } from '@/components/category-picker';
+import { ProductPicker } from '@/components/product-picker';
 import { ConsumedToggle } from '@/components/split-control';
 import { TransactionForm } from '@/components/transaction-form';
 import { Button, Card, Muted } from '@/components/ui';
-import { colors, maxContentWidth, space } from '@/constants/theme';
+import { colors, maxContentWidth, radius, space } from '@/constants/theme';
 import { formatDate, formatEUR } from '@/lib/format';
 import { errorText } from '@/lib/import-io';
+import { sizeLabel } from '@/lib/products';
 import { findMatches, mergeReceiptInto } from '@/lib/receipt';
 import { supabase } from '@/lib/supabase';
-import { useCategories, useDeleteTransaction, useLineItems, useSaveTransaction, useSetConsumed, useSetLineCategory, useTransaction } from '@/lib/queries';
+import { useCategories, useDeleteTransaction, useLineItems, useSaveTransaction, useSetConsumed, useSetLineCategory, useSetLineProduct, useTransaction } from '@/lib/queries';
 import { isSplit } from '@/lib/shared';
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -35,6 +37,7 @@ export default function EditMovimento() {
   const qc = useQueryClient();
   const setConsumed = useSetConsumed();
   const setLineCategory = useSetLineCategory();
+  const setLineProduct = useSetLineProduct();
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
 
@@ -80,7 +83,7 @@ export default function EditMovimento() {
   const myLine = (c: number) => (split && consumedSum > 0 ? Math.round((c * tx.data!.my_cents!) / consumedSum) : null);
 
   return (
-    <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic">
+    <ScrollView style={{ backgroundColor: colors.ground }} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic" automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
       <View style={styles.inner}>
         <Muted>
           {[SOURCE_LABEL[tx.data.source] ?? tx.data.source, store.data?.name, store.data?.locality].filter(Boolean).join(' · ')}
@@ -124,21 +127,40 @@ export default function EditMovimento() {
           <Card>
             <Text style={styles.h3}>Produtos</Text>
             {split && <Muted>Conta dividida por {tx.data.split_people}: toque em &quot;Consumi&quot; para marcar o que não consumiu.</Muted>}
-            <Muted>Mudar a categoria de um produto muda-a também nas outras compras do mesmo produto e fica memorizada.</Muted>
+            <Muted>Mudar a categoria ou o produto de uma linha muda-os também nas outras compras com o mesmo texto e fica memorizado.</Muted>
             {setConsumed.error && <Text style={styles.error}>{setConsumed.error.message}</Text>}
             {setLineCategory.error && <Text style={styles.error}>{setLineCategory.error.message}</Text>}
+            {setLineProduct.error && <Text style={styles.error}>{setLineProduct.error.message}</Text>}
             {lines.data!.map((l) => {
               const mine = l.consumed ? myLine(l.total_cents) : null;
+              const loose = !l.category_id && l.total_cents > 0; // discounts follow the receipt's category
               return (
-                <View key={l.id} style={styles.line}>
+                <View key={l.id} style={[styles.line, loose && styles.looseLine]}>
                   <View style={styles.lineMain}>
                     <Text style={[styles.lineName, split && !l.consumed && styles.notConsumed]} numberOfLines={1}>{l.name}</Text>
+                    {loose && <Text style={styles.looseText}>Sem categoria — escolha uma</Text>}
                     <CategoryPicker
                       index={index}
                       kind="expense"
                       value={l.category_id}
                       onChange={(categoryId) => categoryId !== l.category_id && setLineCategory.mutate({ rawText: l.raw_text, categoryId })}
                     />
+                    {l.total_cents > 0 && (
+                      <View style={styles.productRow}>
+                        <Text style={styles.lineCat}>Produto:</Text>
+                        <ProductPicker
+                          compact
+                          value={l.product_id}
+                          placeholder="por agrupar"
+                          onChange={(productId) => productId !== l.product_id && setLineProduct.mutate({ rawText: l.raw_text, productId })}
+                        />
+                        {(l.brand || l.pack_qty) && (
+                          <Text style={styles.lineCat} numberOfLines={1}>
+                            {[l.brand, sizeLabel(l.pack_qty, l.pack_unit)].filter(Boolean).join(' · ')}
+                          </Text>
+                        )}
+                      </View>
+                    )}
                     {split && (
                       <ConsumedToggle name={l.name} consumed={l.consumed} onChange={(consumed) => setConsumed.mutate({ id: l.id, consumed })} />
                     )}
@@ -175,7 +197,10 @@ const styles = StyleSheet.create({
   h3: { fontSize: 15, fontWeight: '700', color: colors.ink },
   matchCard: { borderWidth: 1, borderColor: colors.accent },
   line: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: 6 },
+  looseLine: { backgroundColor: colors.warningSoft, borderRadius: radius.sm, paddingHorizontal: space.sm, marginHorizontal: -space.sm },
+  looseText: { fontSize: 12, fontWeight: '600', color: colors.warning },
   lineMain: { flex: 1, gap: 2 },
+  productRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   lineName: { fontSize: 14, color: colors.ink },
   lineCat: { fontSize: 12, color: colors.muted },
   lineAmounts: { alignItems: 'flex-end' },

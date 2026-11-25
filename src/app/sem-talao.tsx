@@ -57,7 +57,7 @@ export default function SemTalao() {
   const total = (list.data ?? []).reduce((s, r) => s + r.amount_cents, 0);
 
   return (
-    <ScrollView style={styles.page} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic">
+    <ScrollView style={styles.page} contentContainerStyle={styles.scroll} contentInsetAdjustmentBehavior="automatic" automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">
       <View style={styles.inner}>
         <Muted>
           Compras pagas com cartão (extrato CGD) dos últimos 3 meses sem talão nem fatura. Juntar o talão acrescenta os

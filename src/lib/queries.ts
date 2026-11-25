@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
+import { fetchAll } from '@/lib/import-io';
 import { indexCategories } from '@/lib/categories';
+import { setTextGrouping, type PackUnit } from '@/lib/products';
 import { linePattern } from '@/lib/receipt';
 import { supabase } from '@/lib/supabase';
 import type { Account, Category, CategoryGroup, SpendFact, Transaction, TransactionInput } from '@/lib/types';
@@ -97,15 +99,18 @@ export function useAccounts() {
 export function useTransactions(from: string, to: string) {
   return useQuery({
     queryKey: ['transactions', from, to],
+    // paged: the Data API returns at most 1000 rows per request (a long custom period can have more)
     queryFn: () =>
-      unwrap<Transaction[]>(
+      fetchAll<Transaction>((a, b) =>
         supabase
           .from('transactions')
           .select('*')
           .gte('date', from)
           .lte('date', to)
           .order('date', { ascending: false })
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: false })
+          .order('id')
+          .range(a, b),
       ),
   });
 }
@@ -122,9 +127,21 @@ export function useTransaction(id: string | undefined) {
 export function useSpendFacts(from: string, to: string) {
   return useQuery({
     queryKey: ['spend', from, to],
+    // paged: 12 months of receipt lines are well over the 1000-row limit of one request (rows were silently cut off).
+    // A view has no id: order on every column so pages never overlap or skip rows (same as loadExploreData).
     queryFn: () =>
-      unwrap<SpendFact[]>(
-        supabase.from('spend_facts').select('date, amount_cents, category_id').gte('date', from).lte('date', to),
+      fetchAll<SpendFact>((a, b) =>
+        supabase
+          .from('spend_facts')
+          .select('date, amount_cents, category_id')
+          .gte('date', from)
+          .lte('date', to)
+          .order('date')
+          .order('transaction_id')
+          .order('amount_cents')
+          .order('category_id')
+          .order('product_id')
+          .range(a, b),
       ),
   });
 }
@@ -206,7 +223,47 @@ export function useDeleteTransaction() {
   });
 }
 
-export type LineItem = { id: string; name: string; raw_text: string; quantity: number | null; unit: string | null; total_cents: number; category_id: string | null; consumed: boolean };
+export type LineItem = {
+  id: string;
+  name: string;
+  raw_text: string;
+  quantity: number | null;
+  unit: string | null;
+  total_cents: number;
+  category_id: string | null;
+  consumed: boolean;
+  product_id: string | null;
+  brand: string | null;
+  pack_qty: number | null;
+  pack_unit: PackUnit | null;
+};
+
+/** A receipt item's product, changed on the movement screen: every line with the same printed text follows. */
+export function useSetLineProduct() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rawText, productId }: { rawText: string; productId: string }) => setTextGrouping(rawText, { product_id: productId }),
+    onSuccess: () => ['line_items', 'explore', 'products'].forEach((k) => qc.invalidateQueries({ queryKey: [k] })),
+  });
+}
+
+/**
+ * Receipt products still without a category (discount lines don't count — they follow the receipt), by movement.
+ * Under the 'transactions' key so every save/import/category change refreshes it.
+ */
+export function useUncategorised() {
+  return useQuery({
+    queryKey: ['transactions', 'uncategorised-lines'],
+    queryFn: async () => {
+      const rows = await fetchAll<{ transaction_id: string; name: string }>((from, to) =>
+        supabase.from('line_items').select('transaction_id, name').is('category_id', null).gt('total_cents', 0).order('transaction_id').range(from, to),
+      );
+      const byTx = new Map<string, string[]>();
+      for (const r of rows) byTx.set(r.transaction_id, [...(byTx.get(r.transaction_id) ?? []), r.name]);
+      return byTx;
+    },
+  });
+}
 
 export function useLineItems(transactionId: string | undefined) {
   return useQuery({
@@ -216,7 +273,7 @@ export function useLineItems(transactionId: string | undefined) {
       unwrap<LineItem[]>(
         supabase
           .from('line_items')
-          .select('id, name, raw_text, quantity, unit, total_cents, category_id, consumed')
+          .select('id, name, raw_text, quantity, unit, total_cents, category_id, consumed, product_id, brand, pack_qty, pack_unit')
           .eq('transaction_id', transactionId!)
           .order('position'),
       ),

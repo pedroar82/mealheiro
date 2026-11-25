@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, space } from '@/constants/theme';
 import { categoryPath, type CategoryIndex } from '@/lib/categories';
 import { formatEUR } from '@/lib/format';
+import { useUncategorised } from '@/lib/queries';
 import { isHalfOfTheirs, isShared, isSplit, myCost } from '@/lib/shared';
 import type { Account, Transaction } from '@/lib/types';
 
@@ -28,11 +29,12 @@ export function TransactionRow({ tx, index, accounts }: { tx: Transaction; index
   // expenses without a minus sign (decided 20/11/2026); a shared expense shows the user's part
   const amount = income || refund ? formatEUR(tx.amount_cents, { sign: true }) : formatEUR(tx.kind === 'expense' ? myCost(tx) : tx.amount_cents);
   const muted = transfer || settlement || payback;
+  const loose = useUncategorised().data?.get(tx.id)?.length ?? 0; // receipt products still without a category
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${title}, ${amount}${shared ? ', despesa partilhada, a sua parte' : ''}, ${subtitle}`}
+      accessibilityLabel={`${title}, ${amount}${shared ? ', despesa partilhada, a sua parte' : ''}, ${subtitle}${loose ? `, ${productsWithout(loose)}` : ''}`}
       onPress={() => router.push({ pathname: '/movimento/[id]', params: { id: tx.id } })}
       style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}>
       <View style={[styles.dot, { backgroundColor: income ? '#DDF2E9' : muted ? '#EEF0F3' : '#E6ECFD' }]}>
@@ -45,6 +47,7 @@ export function TransactionRow({ tx, index, accounts }: { tx: Transaction; index
         <Text style={[styles.subtitle, !tx.category_id && !transfer && !refund && !settlement && !payback && { color: colors.warning }]} numberOfLines={1}>
           {subtitle}
         </Text>
+        {loose > 0 && <Text style={styles.loose}>{productsWithout(loose)}</Text>}
       </View>
       <Text style={[styles.amount, income && { color: colors.income }, muted && { color: colors.muted }]}>
         {shared ? '👥 ' : ''}
@@ -54,6 +57,8 @@ export function TransactionRow({ tx, index, accounts }: { tx: Transaction; index
   );
 }
 
+export const productsWithout = (n: number) => (n === 1 ? '1 produto sem categoria' : `${n} produtos sem categoria`);
+
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: 12, minHeight: 56 },
   dot: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
@@ -61,5 +66,6 @@ const styles = StyleSheet.create({
   main: { flex: 1, minWidth: 0 },
   title: { fontSize: 15, fontWeight: '600', color: colors.ink },
   subtitle: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  loose: { fontSize: 12, fontWeight: '600', color: colors.warning, marginTop: 2 },
   amount: { fontSize: 15, fontWeight: '600', color: colors.ink },
 });

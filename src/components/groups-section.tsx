@@ -26,6 +26,14 @@ export function GroupsSection() {
       </Muted>
       {groups.error && <Text style={styles.error}>{groups.error.message}</Text>}
       <Card>
+        <Text style={styles.h3}>Produtos</Text>
+        <Muted>
+          O mesmo produto com nomes diferentes nos talões (“LEITE MIMOSA M/G 1L”, “Leite meio-gordo 1L”) fica junto, com a
+          marca e o tamanho. Agrupe os talões antigos e corrija aqui.
+        </Muted>
+        <Button label="Ver produtos" variant="secondary" onPress={() => router.push('/produtos')} />
+      </Card>
+      <Card>
         <Text style={styles.h3}>Detalhar produtos</Text>
         <Muted>
           Produtos de talões que ficaram numa categoria geral (ex.: só “Supermercado” ou “Talho”): o Claude sugere a categoria

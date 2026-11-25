@@ -24,6 +24,21 @@ export function rootOf(idx: CategoryIndex, id: string | null): string | null {
   return cur?.id ?? null;
 }
 
+/**
+ * The category directly under `parent` on the way to `id` (null parent = the main category).
+ * `id` itself when it is `parent`; undefined when `id` is not inside `parent`.
+ */
+export function childUnder(idx: CategoryIndex, id: string | null, parent: string | null): string | null | undefined {
+  if (parent === null) return rootOf(idx, id);
+  let cur = id ? idx.byId.get(id) : undefined;
+  while (cur) {
+    if (cur.id === parent) return parent;
+    if (cur.parent_id === parent) return cur.id;
+    cur = cur.parent_id ? idx.byId.get(cur.parent_id) : undefined;
+  }
+  return undefined;
+}
+
 /** "Alimentação › Bebidas › Café" */
 export function categoryPath(idx: CategoryIndex, id: string | null): string {
   if (!id) return 'Por categorizar';
