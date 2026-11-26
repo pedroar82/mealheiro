@@ -8,6 +8,8 @@ import Anthropic from 'npm:@anthropic-ai/sdk@1.11.0';
 import { withSupabase } from 'npm:@supabase/server@^1';
 import { encodeBase64 } from 'jsr:@std/encoding@1/base64';
 
+import { cached, logUsage, plain } from '../_shared/ai.ts';
+
 const MODEL = Deno.env.get('RECEIPT_MODEL') ?? 'claude-opus-5-5';
 // Server-side refusal fallback is only offered on these model lines.
 const SUPPORTS_FALLBACK = /^claude-(opus|sonnet|fable)-5/.test(MODEL);
@@ -76,7 +78,7 @@ Output fields:
 - lines: one entry per purchased item, in printed order. raw_text exactly as printed; name a short readable Portuguese product name ("LEITE MIMOSA M/G 1L" → "Leite meio-gordo Mimosa 1L"). quantity/unit when printed (unit "un" or "kg"), unit_price per unit, total = the line's final amount after any discount applied to that line.
   Discounts or vouchers printed as their own lines are separate entries with a negative total.
   For an invoice with a single service (e.g. electricity), one line describing it.
-- category: choose the best match from the category list given by the user, copied exactly, or null if none fits. Always choose the deepest category that fits (a leaf when possible): supermarket food and drinks go to "Alimentação › Supermercado › <section> › <category>" (e.g. "Alimentação › Supermercado › Talho › Porco", "Alimentação › Supermercado › Garrafeira › Vinho tinto"); non-food items go to their own categories: hygiene → "Saúde › Higiene › …", cleaning and household consumables → "Casa › Limpeza › …", kitchen/home goods → "Casa › Artigos para a Casa › …", pet products → "Animais › …", baby products → "Bebé › …", make-up → "Beleza › Cosmética › Maquilhagem". On a restaurant, café, pastelaria or cervejaria bill, drinks go to that place's "› Bebidas" subcategory when it exists (e.g. "Alimentação › Restaurantes › Bebidas") and food to the place itself (e.g. "Alimentação › Restaurantes"). confidence: 0–1 for that category choice.
+- category: choose the best match from the category list given, copied exactly, or null if none fits. Always choose the deepest category that fits (a leaf when possible): supermarket food and drinks go to "Alimentação › Supermercado › <section> › <category>" (e.g. "Alimentação › Supermercado › Talho › Porco", "Alimentação › Supermercado › Garrafeira › Vinho tinto"); non-food items go to their own categories: hygiene → "Saúde › Higiene › …", cleaning and household consumables → "Casa › Limpeza › …", kitchen/home goods → "Casa › Artigos para a Casa › …", pet products → "Animais › …", baby products → "Bebé › …", make-up → "Beleza › Cosmética › Maquilhagem". On a café or pastelaria bill, every item goes to a subcategory of "Alimentação › Café e Pastelaria": "› Café simples" (bica, pingado, galão, meia de leite, abatanado, café), "› Cafés especiais" (mocha, latte, cappuccino, frappuccino, chai latte), "› Outras bebidas" (chá, chocolate quente, sumos, águas, refrigerantes), "› Pastelaria" (pastel de nata, croissant, bolos, muffins, salgados doces) or "› Refeições ligeiras" (tostas, sandes, saladas, sopa). On a restaurant or cervejaria bill, drinks go to that place's "› Bebidas" subcategory when it exists (e.g. "Alimentação › Restaurantes › Bebidas") and food to the place itself (e.g. "Alimentação › Restaurantes"). confidence: 0–1 for that category choice.
 - warnings: short notes in Portuguese about anything unreadable or inconsistent (e.g. lines not adding up to the total).
 Use null for anything not present (for store_address, store_locality, doc_type, atcud, billing_start, billing_end and a line's unit: an empty string ""). Do not invent values.`;
 
@@ -126,7 +128,6 @@ export default {
         : { type: 'image', source: { type: 'base64', media_type: mime as 'image/jpeg' | 'image/png' | 'image/webp', data } };
 
     const text = [
-      `Categorias disponíveis:\n${paths.join('\n')}`,
       doc.qr_raw ? `Dados do código QR da fatura (fonte fiável para NIF, data, total e número do documento):\n${doc.qr_raw}` : null,
       'Extrai os dados deste documento.',
     ].filter(Boolean).join('\n\n');
@@ -136,7 +137,8 @@ export default {
       response = await anthropic.beta.messages.create({
         model: MODEL,
         max_tokens: 16000,
-        system: SYSTEM,
+        // instructions + category list: the same on every document of an import, so cached
+        system: [plain(SYSTEM), cached(`Categorias disponíveis:\n${paths.join('\n')}`)],
         output_config: { effort: 'medium', format: { type: 'json_schema', schema: SCHEMA } },
         // on a policy decline, the API re-runs the request on a fallback model it picks
         ...(SUPPORTS_FALLBACK ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
@@ -149,6 +151,7 @@ export default {
       if (e instanceof Anthropic.APIError) return fail(`Erro da API (${e.status}): ${e.message}`);
       return fail(`Erro ao contactar a API: ${String(e)}`);
     }
+    await logUsage(db, 'extract-receipt', response, { ref: doc.id });
 
     if (response.stop_reason === 'refusal') return fail('O modelo recusou processar este documento.');
     if (response.stop_reason === 'max_tokens') return fail('Resposta demasiado longa (documento com demasiadas linhas).');

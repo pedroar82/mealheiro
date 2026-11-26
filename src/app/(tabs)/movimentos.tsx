@@ -1,11 +1,13 @@
+import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { AutoCategoriseCard } from '@/components/auto-categorise-card';
 import { PeriodSwitcher, usePeriod } from '@/components/month-switcher';
 import { Screen } from '@/components/screen';
 import { myCost } from '@/lib/shared';
 import { TransactionRow } from '@/components/transaction-row';
-import { Card, Chip, Muted } from '@/components/ui';
+import { Button, Card, Chip, Muted } from '@/components/ui';
 import { colors, radius, space } from '@/constants/theme';
 import { categoryPath } from '@/lib/categories';
 import { formatDayShort, formatEUR } from '@/lib/format';
@@ -61,6 +63,13 @@ export default function Movimentos() {
         <Chip label="Receitas" selected={filter === 'income'} onPress={() => setFilter('income')} />
         <Chip label="Por categorizar" selected={filter === 'review'} onPress={() => setFilter('review')} />
       </View>
+
+      {filter === 'review' && (
+        <>
+          <Button label="Criar regras para estes movimentos" variant="secondary" onPress={() => router.push('/criar-regras')} />
+          <AutoCategoriseCard />
+        </>
+      )}
 
       {tx.isLoading && <ActivityIndicator />}
       {tx.error && <Text style={styles.error}>{tx.error.message}</Text>}

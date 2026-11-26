@@ -155,9 +155,9 @@ export function descKey(s: string): string {
   return words.slice(0, 3).join(' ') || normDesc(s);
 }
 
-export type BankRule = { pattern: string; match: 'exact' | 'prefix' | 'contains'; category_id: string | null; priority: number };
+export type BankRule = { pattern: string; match: 'exact' | 'prefix' | 'contains'; category_id: string | null; priority: number; origin?: string };
 
-function ruleMatches(r: BankRule, key: string) {
+export function ruleMatches(r: BankRule, key: string) {
   if (r.match === 'exact') return key === r.pattern;
   if (r.match === 'prefix') return key === r.pattern || key.startsWith(`${r.pattern} `);
   return key.includes(r.pattern);
@@ -182,7 +182,8 @@ function findPath(idx: CategoryIndex, kind: CategoryKind, path: string[]): strin
 export function categoryForKey(idx: CategoryIndex, rules: BankRule[], kind: CategoryKind, key: string): string | null {
   const hits = rules
     .filter((r) => r.category_id && ruleMatches(r, key) && idx.byId.get(r.category_id)?.kind === kind)
-    .sort((a, b) => b.pattern.length - a.pattern.length || a.priority - b.priority);
+    // the user's own rules always win over the ones the model suggested; then the most specific
+    .sort((a, b) => Number(a.origin === 'ai') - Number(b.origin === 'ai') || b.pattern.length - a.pattern.length || a.priority - b.priority);
   if (hits[0]) return hits[0].category_id;
   if (kind === 'expense') {
     for (const b of BUILTIN) if (b.prefix.some((p) => key === p || key.startsWith(`${p} `))) return findPath(idx, kind, b.path);

@@ -4,7 +4,9 @@
 import { categoryPath, type CategoryIndex } from '@/lib/categories';
 import { normDesc } from '@/lib/cgd-import';
 import { addDays, todayISO } from '@/lib/format';
+import { autoCategorise } from '@/lib/auto-categorise';
 import { groupTransaction } from '@/lib/products';
+import { lineRuleFor, loadRules, storeRuleFor, withStoreRule, type Rules } from '@/lib/rule-match';
 import { supabase } from '@/lib/supabase';
 import type { SplitMode } from '@/lib/types';
 
@@ -71,7 +73,7 @@ export type Draft = {
   split: { people: number; mode: SplitMode }; // people 1 = not split (restaurants, cafés…)
 };
 
-export type LineRule = { pattern: string; category_id: string | null };
+export type { LineRule } from '@/lib/rule-match';
 
 const MIN_CONFIDENCE = 0.6;
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -136,15 +138,19 @@ export function parseAtQr(raw: string): AtQr | null {
   };
 }
 
-export function buildDraft(documentId: string, kind: Draft['kind'], x: Extraction, idx: CategoryIndex, rules: LineRule[], qr?: AtQr | null): Draft {
+export function buildDraft(documentId: string, kind: Draft['kind'], x: Extraction, idx: CategoryIndex, rules: Rules, qr?: AtQr | null): Draft {
   const byPath = new Map<string, string>();
   for (const c of idx.byId.values()) if (c.kind === 'expense') byPath.set(normDesc(categoryPath(idx, c.id)), c.id);
-  const ruleFor = new Map(rules.filter((r) => r.category_id && idx.byId.has(r.category_id)).map((r) => [r.pattern, r.category_id!]));
+  // the user's rules weigh more than the model: product rule first, then a rule for the shop / supplier
+  const store =
+    storeRuleFor(idx, rules.desc, describe(x.merchant_name ?? '', x.store_name ?? null)) ??
+    storeRuleFor(idx, rules.desc, x.merchant_name) ??
+    storeRuleFor(idx, rules.desc, x.store_name);
 
   const lines = x.lines.map((l, i): DraftLine => {
-    const rule = ruleFor.get(linePattern(l.raw_text));
+    const rule = lineRuleFor(idx, rules.lines, l.raw_text, l.name);
     const guess = l.category && l.confidence >= MIN_CONFIDENCE ? byPath.get(normDesc(l.category)) ?? null : null;
-    const category_id = rule ?? guess;
+    const category_id = rule ?? withStoreRule(idx, guess, store);
     return {
       key: String(i),
       raw_text: l.raw_text,
@@ -155,7 +161,7 @@ export function buildDraft(documentId: string, kind: Draft['kind'], x: Extractio
       total_cents: toCents(l.total),
       category_id,
       initial_category_id: category_id,
-      needs_review: !rule && !!guess,
+      needs_review: !rule && !!guess && category_id === guess,
       consumed: true,
     };
   });
@@ -376,7 +382,8 @@ export async function saveDraft(d: Draft, storagePath: string | null, mergeInto?
   if (unique.length) await run(supabase.from('rules').upsert(unique, { onConflict: 'user_id,scope,match,pattern' }));
 
   // 5. products: grouped in the background (Edge Function group-products); a failure leaves them for Produtos to retry
-  void groupTransaction(tx.id);
+  //    then products still without a category (rules, history, model) — automatic, fixable on the movement screen
+  void groupTransaction(tx.id).then(() => autoCategorise({ txIds: [tx.id], parts: ['lines'] }).catch((e) => console.warn('auto-categorise', e)));
 
   // 6. the image/PDF is not kept (decision 19/11/2026)
   if (storagePath) await supabase.storage.from('uploads').remove([storagePath]);
@@ -447,10 +454,8 @@ export async function uploadAndExtract(opts: {
   }
 }
 
-export async function loadLineRules(): Promise<LineRule[]> {
-  const { data } = await supabase.from('rules').select('pattern, category_id').eq('scope', 'line_item');
-  return (data ?? []) as LineRule[];
-}
+/** Product and description rules, for buildDraft. */
+export const loadLineRules = loadRules;
 
 export type Match = { id: string; date: string; description: string | null; source: string; days: number; amount_cents?: number };
 

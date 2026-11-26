@@ -212,7 +212,7 @@ export default function Explorar() {
       {!target && !data.isLoading && (
         <Muted>
           {kind === 'category'
-            ? 'Escolha uma categoria (pode ser uma subcategoria, ex.: Bebidas › Café) ou um grupo. Para todos os leites, escolha a categoria Leite.'
+            ? 'Escolha uma categoria (pode ser uma subcategoria, ex.: Café e Pastelaria › Café simples) ou um grupo. Para todos os leites, escolha a categoria Leite.'
             : kind === 'product'
               ? 'Escolha um produto (ex.: Leite meio-gordo UHT) — todas as marcas, ou uma só.'
               : 'Escreva pelo menos 2 letras.'}

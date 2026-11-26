@@ -453,3 +453,32 @@ note when the period includes history without product detail.
   receipt is saved, reusing the user's product names) and applies to every itemised receipt, not only supermarkets.
   Lines with the same printed text share product/brand/size; fixes (Produtos screen, movement screen) apply to all of
   them and to future receipts. Prices are compared per kg / litre / piece when the size is known, else per package.
+- 25/11/2026 — Café e Pastelaria: Alimentação › Pastelaria and Alimentação › Bebidas › Café merged into
+  Alimentação › Café e Pastelaria (Café simples, Cafés especiais, Outras bebidas, Pastelaria, Refeições ligeiras).
+  History in Café / Pastelaria › Bebidas goes to the category itself ("(geral)"); receipt items are detailed with
+  Reorganizar produtos. Group Bebidas includes the three drink subcategories. Migration `20261125010000_cafe_pastelaria.sql`.
+- 25/11/2026 — Automatic categorisation, automatic but fixable, also on import. Movements without a category (no
+  receipt) and receipt products without a category: saved rules → the user's history (same bank description key /
+  printed text / product, ≥ 80% agreement; generic keys like TRF/MB Way excluded) → model (`categorise-movements`,
+  `categorise-lines`; applied only at confidence ≥ 0.75 / 0.6). New bank descriptions and printed texts become rules with
+  origin 'ai' (never replacing the user's). Runs from Movimentos › Por categorizar, after the CGD import (new movements)
+  and after a receipt is saved (its products). The result lists every change; "Anular tudo" reverts the run.
+- 25/11/2026 — Model cost. Every Edge Function that calls the model puts the stable part of the request (instructions,
+  the user's category list, examples) first in `system`, marked for prompt caching (5 minutes), so the requests of one
+  import pay full price for it once (`supabase/functions/_shared/ai.ts`). `group-products` caches only its instructions
+  (its product list changes between batches). Each call writes one row in `ai_usage` (function, model that answered,
+  input / output / cache read / cache write tokens). The app estimates the cost from a price table by model
+  (`src/lib/ai-usage.ts`) and shows it in Definições › Importações (this month, per task, per day). Migration
+  `20261125020000_ai_usage.sql`.
+- 26/11/2026 — The user's rules come first, for everything. "Criar regras" screen (Definições › Regras › Nova regra;
+  Movimentos › Por categorizar), two kinds of rule:
+  · Descrição (scope bank_desc): the description of any movement — bank, Excel, manual, receipts and invoices (shop /
+    supplier name); "começa por" / "contém", compared with the description key. On an itemised receipt it acts on the
+    products, and the movement's category is recomputed from them.
+  · Produto (scope line_item): a receipt line's printed text or name; "igual a" / "começa por" (whole words) / "contém".
+  A preview lists what the rule catches grouped by current category; the user picks which groups move — by default
+  the ones without a category and those in a parent of the rule's category (e.g. "Casa" → "Casa › Eletricidade");
+  anything in another subcategory only moves if ticked. "Anular" puts it back. Below, what has no category and no
+  rule, most frequent first. Afterwards (new receipts, automatic categorisation, CGD import): product rule → shop rule
+  (only for products with no category or a parent of the rule's category; the model's guess inside the rule's category
+  is kept) → history → model. Between rules: the user's before the model's (origin 'ai'), then exact, then the longest.

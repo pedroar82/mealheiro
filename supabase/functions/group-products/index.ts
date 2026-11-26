@@ -10,6 +10,8 @@
 import Anthropic from 'npm:@anthropic-ai/sdk@1.11.0';
 import { withSupabase } from 'npm:@supabase/server@^1';
 
+import { cached, logUsage, plain } from '../_shared/ai.ts';
+
 const MODEL = Deno.env.get('RECEIPT_MODEL') ?? 'claude-opus-5-5';
 const SUPPORTS_FALLBACK = /^claude-(opus|sonnet|fable)-5/.test(MODEL);
 const MAX_ITEMS = 150;
@@ -86,7 +88,7 @@ export default {
       response = await anthropic.beta.messages.create({
         model: MODEL,
         max_tokens: 16000,
-        system: SYSTEM,
+        system: [cached(SYSTEM)], // the product list below grows between batches, so only the instructions are cached
         output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
         ...(SUPPORTS_FALLBACK ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
         messages: [
@@ -102,6 +104,7 @@ export default {
       if (e instanceof Anthropic.APIError) return Response.json({ error: `Erro da API (${e.status}): ${e.message}` }, { status: 502 });
       return Response.json({ error: `Erro ao contactar a API: ${String(e)}` }, { status: 502 });
     }
+    await logUsage(ctx.supabase, 'group-products', response, { items: clean.length });
 
     if (response.stop_reason === 'refusal') return Response.json({ error: 'O modelo recusou o pedido.' }, { status: 502 });
     if (response.stop_reason === 'max_tokens') return Response.json({ error: 'Resposta demasiado longa — envie menos produtos.' }, { status: 502 });

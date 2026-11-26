@@ -283,8 +283,9 @@ export function RulesSection() {
     <>
       <Muted>
         Regras aprendidas quando corrige uma categoria: o texto impresso (ou a descrição do banco) passa a ir sempre para essa
-        categoria. Pode mudar a categoria ou apagar a regra.
+        categoria. Pode mudar a categoria ou apagar a regra. As suas regras passam à frente das sugeridas pelo modelo.
       </Muted>
+      <Button label="Nova regra (descrição ou produto)" variant="secondary" onPress={() => router.push('/criar-regras')} />
       <View style={styles.chips}>
         {(Object.keys(SCOPE) as Rule['scope'][]).map((s) => (
           <Chip key={s} label={`${SCOPE[s]} (${counts(s)})`} selected={scope === s} onPress={() => setScope(s)} />

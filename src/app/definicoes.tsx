@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
+import { AiCostSection } from '@/components/ai-cost-section';
 import { ExportSection } from '@/components/export-section';
 import { GroupsSection } from '@/components/groups-section';
 import { AccountsSection, CategoriesSection, ImportsSection, RulesSection } from '@/components/settings';
@@ -33,7 +34,12 @@ export default function Definicoes() {
         )}
         {tab === 'rules' && <RulesSection />}
         {tab === 'accounts' && <AccountsSection />}
-        {tab === 'imports' && <ImportsSection />}
+        {tab === 'imports' && (
+          <>
+            <AiCostSection />
+            <ImportsSection />
+          </>
+        )}
         {tab === 'export' && <ExportSection />}
       </View>
     </ScrollView>

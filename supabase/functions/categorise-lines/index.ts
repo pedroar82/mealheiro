@@ -8,6 +8,8 @@
 import Anthropic from 'npm:@anthropic-ai/sdk@1.11.0';
 import { withSupabase } from 'npm:@supabase/server@^1';
 
+import { cached, logUsage, plain } from '../_shared/ai.ts';
+
 const MODEL = Deno.env.get('RECEIPT_MODEL') ?? 'claude-opus-5-5';
 const SUPPORTS_FALLBACK = /^claude-(opus|sonnet|fable)-5/.test(MODEL);
 const MAX_ITEMS = 150;
@@ -33,11 +35,11 @@ const SCHEMA = {
 
 const SYSTEM = `You categorise items from Portuguese supermarket receipts (Continente, Pingo Doce, Lidl, Auchan, Mercadona…).
 Each item has a key, the text as printed on the receipt and a readable name. For every item return its key and the best
-category from the list given by the user, copied exactly. Always choose the deepest category that fits (a leaf when
+category from the list given, copied exactly. Always choose the deepest category that fits (a leaf when
 possible): food and drinks → "Alimentação › Supermercado › <section> › <category>" (e.g. "… › Talho › Porco",
 "… › Garrafeira › Vinho tinto", "… › Pequeno-almoço › Bolachas"); hygiene → "Saúde › Higiene › …"; cleaning and household
 consumables → "Casa › Limpeza › …"; kitchen/home goods → "Casa › Artigos para a Casa › …"; pets → "Animais › …";
-baby → "Bebé › …"; anything else to the closest category. Use null only if nothing fits. confidence: 0–1.
+baby → "Bebé › …"; items bought at a café or pastelaria (not a supermarket) → "Alimentação › Café e Pastelaria › Café simples / Cafés especiais / Outras bebidas / Pastelaria / Refeições ligeiras"; anything else to the closest category. Use null only if nothing fits. confidence: 0–1.
 Return every key once.`;
 
 type Category = { id: string; name: string; parent_id: string | null; kind: string };
@@ -69,13 +71,13 @@ export default {
       response = await anthropic.beta.messages.create({
         model: MODEL,
         max_tokens: 16000,
-        system: SYSTEM,
+        system: [plain(SYSTEM), cached(`Categorias disponíveis:\n${paths.join('\n')}`)], // same on every batch: cached
         output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
         ...(SUPPORTS_FALLBACK ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
         messages: [
           {
             role: 'user',
-            content: `Categorias disponíveis:\n${paths.join('\n')}\n\nProdutos (JSON):\n${JSON.stringify(clean)}`,
+            content: `Produtos (JSON):\n${JSON.stringify(clean)}`,
           },
         ],
       });
@@ -85,6 +87,7 @@ export default {
       if (e instanceof Anthropic.APIError) return Response.json({ error: `Erro da API (${e.status}): ${e.message}` }, { status: 502 });
       return Response.json({ error: `Erro ao contactar a API: ${String(e)}` }, { status: 502 });
     }
+    await logUsage(ctx.supabase, 'categorise-lines', response, { items: clean.length });
 
     if (response.stop_reason === 'refusal') return Response.json({ error: 'O modelo recusou o pedido.' }, { status: 502 });
     if (response.stop_reason === 'max_tokens') return Response.json({ error: 'Resposta demasiado longa — envie menos produtos.' }, { status: 502 });

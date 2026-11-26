@@ -24,7 +24,7 @@ const BATCH = 100;
 const unchanged = (i: Item, id: string | null) => !id || (i.from.length === 1 && i.from[0] === id);
 const LOW = 0.6;
 
-const SCOPE = ['Alimentação › Supermercado', 'Saúde › Higiene', 'Casa › Limpeza', 'Casa › Artigos para a Casa'];
+const SCOPE = ['Alimentação › Supermercado', 'Saúde › Higiene', 'Casa › Limpeza', 'Casa › Artigos para a Casa', 'Alimentação › Café e Pastelaria'];
 
 /** Categories in SCOPE that still have subcategories: items there can be detailed further. */
 function eligible(idx: CategoryIndex): string[] {
@@ -170,7 +170,7 @@ export default function ReorganizarSupermercado() {
             {list.length} {list.length === 1 ? 'produto diferente' : 'produtos diferentes'} por detalhar
           </Text>
           <Muted>
-            Produtos de talões que estão numa categoria com subcategorias (ex.: só “Supermercado” ou só “Talho”). O Claude sugere a categoria mais detalhada de cada um (Talho › Porco, Garrafeira › Vinho tinto…). Revê as sugestões antes de guardar;
+            Produtos de talões que estão numa categoria com subcategorias (ex.: só “Supermercado”, só “Talho” ou só “Café e Pastelaria”). O Claude sugere a categoria mais detalhada de cada um (Talho › Porco, Garrafeira › Vinho tinto…). Revê as sugestões antes de guardar;
             nada muda até carregar em Guardar. Os produtos repetidos contam uma vez.
           </Muted>
           {list.length > 0 && !suggested && <Button label="Sugerir subcategorias" busy={!!progress} onPress={suggest} />}

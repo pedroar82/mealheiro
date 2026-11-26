@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { AutoCategoriseCard } from '@/components/auto-categorise-card';
 import { CategoryPicker } from '@/components/category-picker';
 import { Button, Card, Chip, FieldLabel, Muted } from '@/components/ui';
 import { colors, maxContentWidth, space } from '@/constants/theme';
@@ -70,7 +71,7 @@ async function loadContext(lines: BankLine[], bankId: string) {
       supabase.from('bank_lines').select('transaction_id').not('transaction_id', 'is', null).order('id').range(a, b),
     ),
     fetchAll<BankRule>((a, b) =>
-      supabase.from('rules').select('pattern, match, category_id, priority').eq('scope', 'bank_desc').order('id').range(a, b),
+      supabase.from('rules').select('pattern, match, category_id, priority, origin').eq('scope', 'bank_desc').order('id').range(a, b),
     ),
   ]);
   const fps = await Promise.all(lines.map((l) => fingerprint(bankId, l)));
@@ -99,6 +100,7 @@ export default function ImportarExtrato() {
   const [busy, setBusy] = useState<'reading' | 'importing' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<Done | null>(null);
+  const [createdIds, setCreatedIds] = useState<string[]>([]); // new movements of the last import: categorised automatically
 
   /** What will happen to each line, given the user's choices. */
   const finals = useMemo<Final[]>(() => {
@@ -314,6 +316,7 @@ export default function ImportarExtrato() {
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['transaction'] });
       qc.invalidateQueries({ queryKey: ['spend'] });
+      setCreatedIds(finals.flatMap((f, i) => (f.status === 'created' && txFor.get(i) ? [txFor.get(i)!] : [])));
       setDone(counts);
       setLoaded(null);
     } catch (e) {
@@ -360,6 +363,9 @@ export default function ImportarExtrato() {
               <Button label="Compras sem talão (opcional)" variant="secondary" onPress={() => router.push('/sem-talao')} />
             )}
           </Card>
+        )}
+        {done && createdIds.length > 0 && (
+          <AutoCategoriseCard key={createdIds[0]} txIds={createdIds} autoStart />
         )}
 
         {loaded && (

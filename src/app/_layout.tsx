@@ -34,6 +34,7 @@ function RootNavigator() {
         <Stack.Screen name="sem-talao" options={{ headerShown: true, title: 'Compras sem talão', headerBackTitle: 'Voltar' }} />
         <Stack.Screen name="reorganizar-supermercado" options={{ headerShown: true, title: 'Reorganizar produtos', headerBackTitle: 'Voltar' }} />
         <Stack.Screen name="produtos" options={{ headerShown: true, title: 'Produtos', headerBackTitle: 'Voltar' }} />
+        <Stack.Screen name="criar-regras" options={{ headerShown: true, title: 'Criar regras', headerBackTitle: 'Voltar' }} />
         <Stack.Screen name="importar-partilhadas" options={{ headerShown: true, title: 'Contas da casa', headerBackTitle: 'Voltar' }} />
       </Stack.Protected>
       <Stack.Protected guard={!session}>
