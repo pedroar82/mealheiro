@@ -265,6 +265,34 @@ export function useUncategorised() {
   });
 }
 
+/**
+ * Receipts / invoices in [from, to] with a product whose name or printed text contains `q` (Movimentos search:
+ * "espetada" finds the restaurant bill). Map of transaction id → the first matching product's name.
+ */
+export function useLineSearch(from: string, to: string, q: string) {
+  // characters that would break the PostgREST or() filter or act as ilike wildcards
+  const term = q.trim().replace(/[,()%_\\*]/g, ' ').trim();
+  return useQuery({
+    queryKey: ['line_items', 'search', from, to, term.toLowerCase()],
+    enabled: term.length >= 2,
+    queryFn: async () => {
+      const rows = await fetchAll<{ transaction_id: string; name: string; raw_text: string }>((a, b) =>
+        supabase
+          .from('line_items')
+          .select('transaction_id, name, raw_text, transactions!inner(date)')
+          .gte('transactions.date', from)
+          .lte('transactions.date', to)
+          .or(`name.ilike.*${term}*,raw_text.ilike.*${term}*`)
+          .order('id')
+          .range(a, b),
+      );
+      const byTx = new Map<string, string>();
+      for (const r of rows) if (!byTx.has(r.transaction_id)) byTx.set(r.transaction_id, r.name || r.raw_text);
+      return byTx;
+    },
+  });
+}
+
 export function useLineItems(transactionId: string | undefined) {
   return useQuery({
     queryKey: ['line_items', transactionId],

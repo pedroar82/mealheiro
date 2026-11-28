@@ -405,6 +405,36 @@ function AccountRow({ a, role }: { a: Account; role: 'bank' | 'cash' | null }) {
 }
 
 // ---------------------------------------------------------------------------
+// Palavra-passe (de entrar na app)
+// ---------------------------------------------------------------------------
+export function PasswordSection() {
+  const [pw, setPw] = useState('');
+  const [again, setAgain] = useState('');
+  const [done, setDone] = useState(false);
+  const change = useMutation({
+    mutationFn: async () => {
+      if (pw.length < 6) throw new Error('Use pelo menos 6 caracteres.');
+      if (pw !== again) throw new Error('As duas palavras-passe não são iguais.');
+      const { error } = await supabase.auth.updateUser({ password: pw });
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => (setPw(''), setAgain(''), setDone(true)),
+  });
+  const edit = (set: (t: string) => void) => (t: string) => (set(t), setDone(false));
+  return (
+    <Card>
+      <Text style={styles.h3}>Mudar palavra-passe</Text>
+      <Muted>A sessão continua aberta neste e nos outros aparelhos; da próxima vez que entrar, use a nova.</Muted>
+      <Field value={pw} onChangeText={edit(setPw)} placeholder="Nova palavra-passe" secureTextEntry autoCapitalize="none" autoCorrect={false} textContentType="newPassword" autoComplete="new-password" />
+      <Field value={again} onChangeText={edit(setAgain)} placeholder="Repita a nova palavra-passe" secureTextEntry autoCapitalize="none" autoCorrect={false} textContentType="newPassword" autoComplete="new-password" />
+      <Button label="Mudar palavra-passe" busy={change.isPending} disabled={!pw || !again} onPress={() => change.mutate()} />
+      {change.error && <Text style={styles.error}>{change.error.message}</Text>}
+      {done && <Muted>Palavra-passe mudada.</Muted>}
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Importações
 // ---------------------------------------------------------------------------
 type ImportRow = { id: string; source: 'excel' | 'bank_csv'; file_name: string | null; period_start: string | null; period_end: string | null; stats: Record<string, number>; created_at: string };

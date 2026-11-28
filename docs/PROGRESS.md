@@ -172,3 +172,15 @@ Last updated: 23/11/2026. Read with `docs/SPEC.md` (requirements, data model, de
   EDP movements in Casa › Gás to be checked by the user. Avoid running anything that calls the model without asking
   (the user is watching API cost).
 - Next after testing: from Phase 2 "Next" — e-Fatura import, other banks/cards, email inbox, offline cache.
+
+## 28/11/2026 — iPhone app (EAS Build, internal distribution)
+
+- Native app installed on the user's iPhone: `eas build --platform ios --profile preview` (ad hoc, device registered
+  with `eas device:create`). Supabase URL and publishable key live in EAS environment variables (`preview`), not in
+  the repo; `.env` is never uploaded.
+- Changes reach the phone without a new build: `npx eas-cli@latest update --channel preview --environment preview
+  --message "…"` (runtimeVersion policy `appVersion`; a native change — new native module, app.json plugin — needs a
+  new build instead).
+- Fixed for native: SHA-256 for import dedupe keys (`src/lib/hash.native.ts`, expo-crypto; same hex as web).
+- New: Definições › Contas › Mudar palavra-passe; Movimentos search also finds receipt products (name or printed
+  text) and ignores accents.

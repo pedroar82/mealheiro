@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AutoCategoriseCard } from '@/components/auto-categorise-card';
@@ -11,7 +11,7 @@ import { Button, Card, Chip, Muted } from '@/components/ui';
 import { colors, radius, space } from '@/constants/theme';
 import { categoryPath } from '@/lib/categories';
 import { formatDayShort, formatEUR } from '@/lib/format';
-import { useAccounts, useCategories, useTransactions, useUncategorised } from '@/lib/queries';
+import { useAccounts, useCategories, useLineSearch, useTransactions, useUncategorised } from '@/lib/queries';
 import type { Transaction } from '@/lib/types';
 
 type Filter = 'all' | 'expense' | 'income' | 'review';
@@ -24,15 +24,22 @@ export default function Movimentos() {
   const loose = useUncategorised().data;
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  // products are searched on the server, a moment after typing stops
+  const [typed, setTyped] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setTyped(query), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+  const lines = useLineSearch(period.from, period.to, typed).data;
 
   const groups = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = fold(query.trim());
     const list = (tx.data ?? []).filter((t) => {
       if (filter === 'expense' && t.kind !== 'expense') return false;
       if (filter === 'income' && t.kind !== 'income') return false;
       if (filter === 'review' && !(loose?.has(t.id) || (!t.category_id && t.kind !== 'transfer' && t.kind !== 'refund' && t.kind !== 'settlement' && t.kind !== 'payback'))) return false;
       if (!q) return true;
-      return [t.description, categoryPath(index, t.category_id)].some((s) => s?.toLowerCase().includes(q));
+      return lines?.has(t.id) || [t.description, categoryPath(index, t.category_id)].some((s) => !!s && fold(s).includes(q));
     });
     const byDay = new Map<string, Transaction[]>();
     for (const t of list) {
@@ -44,7 +51,7 @@ export default function Movimentos() {
       items,
       spent: items.reduce((s, t) => s + (t.kind === 'expense' ? myCost(t) : t.kind === 'refund' ? -t.amount_cents : 0), 0),
     }));
-  }, [tx.data, query, filter, index, loose]);
+  }, [tx.data, query, filter, index, loose, lines]);
 
   return (
     <Screen title="Movimentos">
@@ -52,7 +59,7 @@ export default function Movimentos() {
       <TextInput
         value={query}
         onChangeText={setQuery}
-        placeholder="Procurar descrição ou categoria"
+        placeholder="Procurar descrição, produto ou categoria"
         placeholderTextColor={colors.muted}
         accessibilityLabel="Procurar movimentos"
         style={styles.search}
@@ -84,6 +91,7 @@ export default function Movimentos() {
           {g.items.map((t, i) => (
             <View key={t.id} style={i > 0 && styles.divider}>
               <TransactionRow tx={t} index={index} accounts={accounts.data} />
+              {!!query.trim() && lines?.has(t.id) && <Text style={styles.hit}>Produto: {lines.get(t.id)}</Text>}
             </View>
           ))}
         </Card>
@@ -101,4 +109,10 @@ const styles = StyleSheet.create({
   daySpent: { fontSize: 13, color: colors.muted },
   divider: { borderTopWidth: 1, borderTopColor: '#EEF0F3' },
   error: { color: colors.danger },
+  hit: { fontSize: 13, color: colors.muted, paddingBottom: space.xs },
 });
+
+/** Lower case without accents: "eletricidade" finds "Eletricidade", "cafe" finds "Café". */
+function fold(s: string) {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}

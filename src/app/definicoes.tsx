@@ -4,7 +4,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { AiCostSection } from '@/components/ai-cost-section';
 import { ExportSection } from '@/components/export-section';
 import { GroupsSection } from '@/components/groups-section';
-import { AccountsSection, CategoriesSection, ImportsSection, RulesSection } from '@/components/settings';
+import { AccountsSection, CategoriesSection, ImportsSection, PasswordSection, RulesSection } from '@/components/settings';
 import { Segmented } from '@/components/ui';
 import { colors, maxContentWidth, space } from '@/constants/theme';
 
@@ -33,7 +33,12 @@ export default function Definicoes() {
           </>
         )}
         {tab === 'rules' && <RulesSection />}
-        {tab === 'accounts' && <AccountsSection />}
+        {tab === 'accounts' && (
+          <>
+            <AccountsSection />
+            <PasswordSection />
+          </>
+        )}
         {tab === 'imports' && (
           <>
             <AiCostSection />
